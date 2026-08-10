@@ -16,7 +16,14 @@ FORMULA : Upside = (Fair Value per Share / Market Price) - 1
           sensitivity to WACC and terminal growth. This is not precision,
           it's an acknowledgement of uncertainty.
 
-OUTPUT  : dict {rating, upside, label, note}
+          A final gate runs after the rating above: Upside > +100% or
+          < -50% overrides rating to "Review Required" and adds a
+          reason_override string. This runs after the full pipeline has
+          completed (not a screening-style early skip) and does not alter
+          fair_value_per_share, upside, or any FCFF/WACC figure -- see
+          config.py review_upside_threshold / review_downside_threshold.
+
+OUTPUT  : dict {rating, upside, label, note[, reason_override]}
 =============================================================================
 """
 
@@ -64,7 +71,7 @@ def make_recommendation(valuation, flags=None):
                    f"Check WACC, terminal growth, and EBIT margin before relying "
                    f"on it.")
 
-    return {
+    result = {
         "rating": rating,
         "upside": float(upside),
         "label": label,
@@ -72,3 +79,28 @@ def make_recommendation(valuation, flags=None):
         "threshold_buy": A["buy_threshold"],
         "threshold_sell": A["sell_threshold"],
     }
+
+    # -------------------------------------------------------------------
+    # FINAL GATE - REVIEW REQUIRED
+    # -------------------------------------------------------------------
+    # Runs here, AFTER upside above is fully computed from a completed
+    # valuation -- unlike the Section 3 screening gate, which runs before
+    # any DCF math and can skip the calculation entirely, this gate never
+    # skips anything. fair_value_per_share, upside, and every FCFF/WACC
+    # number computed upstream are untouched; this only overrides which
+    # rating is considered trustworthy enough to surface. The UI is
+    # responsible for hiding fair_value_per_share/upside and Sections
+    # 7-12 when it sees this rating -- they stay in this dict either way
+    # for internal debugging.
+    if upside > A["review_upside_threshold"] or upside < A["review_downside_threshold"]:
+        result["rating"] = "Review Required"
+        result["reason_override"] = (
+            "This result falls outside a defensible range for FCFF-based DCF. "
+            "The gap between fair value and market price is wide enough that "
+            "it more often signals a modelling or data issue than genuine "
+            "mispricing. Consider cross-checking with SOTP, Net Asset Value, "
+            "or relative valuation (EV/EBITDA, P/E against peers) before "
+            "drawing a conclusion."
+        )
+
+    return result

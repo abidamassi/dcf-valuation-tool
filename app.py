@@ -224,7 +224,15 @@ st.markdown(
 # =====================================================================
 pill("01", "Valuation verdict")
 
-if scr["passed"] and r.get("ok"):
+# Set once here and reused further down to gate Sections 4-11 (drivers,
+# WACC, projection, terminal value, bridge, sensitivity, scenarios, model
+# limitations). This never skips the calculation itself -- by the time
+# this is True, the full pipeline already ran to completion in main.py.
+# It only controls what the UI renders.
+review_required = (scr["passed"] and r.get("ok")
+                   and r["recommendation"].get("rating") == "Review Required")
+
+if scr["passed"] and r.get("ok") and not review_required:
     val = r["valuation"]
     rec = r["recommendation"]
     sc_df = r["scenarios"]
@@ -279,6 +287,28 @@ if scr["passed"] and r.get("ok"):
       <div class="mark" style="left:{pos:.1f}%"></div>
     </div>
     <div class="ends"><span>Bear {f_idr(lo)}</span><span>Bull {f_idr(hi)}</span></div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+elif review_required:
+    # Fair value and upside were computed (see r["recommendation"] for
+    # debugging) but are deliberately not surfaced here -- the gap is wide
+    # enough that it more often signals a modelling/data issue than real
+    # mispricing. Same neutral, ink-muted styling as the "no verdict"
+    # branch below (not buy/sell/hold green/red/amber), just with the
+    # Review Required reason in place of a screening-failure reason.
+    reason = r["recommendation"]["reason_override"]
+    st.markdown(f"""
+<div class="verdict">
+  <div class="row">
+    <div class="vcell">
+      <div class="lab">Recommendation</div>
+      <div class="rating" style="color:{COLORS['ink_muted']}">Review Required</div>
+    </div>
+    <div class="vcell vcell-wide">
+      <div class="lab">Reason</div>
+      <div class="reason">{reason}</div>
+    </div>
   </div>
 </div>
 """, unsafe_allow_html=True)
@@ -337,6 +367,19 @@ if scr["passed"]:
     st.markdown(f'<div class="callout"><b class="gate-ok">ELIGIBLE.</b> '
                 f'All gates passed. The valuation below is calculated.</div>',
                 unsafe_allow_html=True)
+    if review_required:
+        # Eligible and fully calculated, but the result itself is outside a
+        # defensible range (see the verdict band above for the full reason).
+        # Cuts off here, same as the CANNOT PROCEED path below -- data
+        # quality warnings and everything past it (drivers, WACC,
+        # projection, terminal value, bridge, sensitivity, scenarios,
+        # model limitations) is not rendered for this rating.
+        st.markdown(f'<div class="callout"><b class="gate-review">REVIEW REQUIRED.</b> '
+                    f'The valuation gap is too wide to trust here. Consider SOTP, '
+                    f'Net Asset Value, or relative valuation (EV/EBITDA, P/E vs '
+                    f'peers) instead.</div>', unsafe_allow_html=True)
+        render_disclaimer()
+        st.stop()
 else:
     status_text = scr["status"]
     if status_text.startswith("CANNOT PROCEED - "):

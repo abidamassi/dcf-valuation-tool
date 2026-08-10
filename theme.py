@@ -199,8 +199,12 @@ section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
    edge instead of every item shrinking to its own text width and
    bunching to the left with a single large gap trailing behind them.
    flex-wrap then folds the row onto as many lines as the width needs,
-   so mobile gets one stat per line for free without a media query. */
-.verdict .row {{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:1.5rem 2.2rem; }}
+   so mobile gets one stat per line for free without a media query.
+   align-items is flex-start (top), not flex-end: cells vary in height
+   (a one-line rating vs. a multi-line reason paragraph), and bottom
+   alignment let the shorter cells' labels drift down out of line with
+   the taller cell's label instead of all labels sitting flush at top. */
+.verdict .row {{ display:flex; flex-wrap:wrap; align-items:flex-start; gap:1.5rem 2.2rem; }}
 .verdict .vcell {{ flex:1 1 190px; min-width:150px; }}
 .verdict .vcell-wide {{ flex:2 1 320px; }}
 .verdict .rating {{ font-size:2.5rem; font-weight:700; line-height:1; letter-spacing:-.02em; }}
@@ -232,6 +236,7 @@ section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
 .callout b {{ color:var(--navy); }}
 .gate-ok {{ color:{COLORS['buy']}; font-weight:600; }}
 .gate-no {{ color:{COLORS['sell']}; font-weight:600; }}
+.gate-review {{ color:{COLORS['ink_muted']}; font-weight:600; }}
 
 /* ---------- STYLED TABLES (custom HTML, replaces the native grid) ---------- */
 .rtable-wrap {{ border:1px solid var(--rule); border-radius:14px; overflow:hidden; margin:.3rem 0 .6rem 0; }}

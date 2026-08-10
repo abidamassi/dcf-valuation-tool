@@ -135,6 +135,15 @@ ASSUMPTIONS = {
     "buy_threshold":        0.10,    # Upside > +10%  -> BUY
     "sell_threshold":      -0.10,    # Upside < -10%  -> SELL
                                      # In between      -> HOLD
+
+    # Final gate, checked AFTER the full pipeline (Sections 1-12) has
+    # already run to completion -- nothing here skips or alters any
+    # FCFF/WACC calculation, it only decides whether the resulting rating
+    # is trustworthy enough to show. A gap this wide more often points to
+    # a modelling or data problem than genuine mispricing (see
+    # s10_recommendation.py, make_recommendation()).
+    "review_upside_threshold":   1.00,    # Upside > +100%  -> Review Required
+    "review_downside_threshold": -0.50,   # Upside < -50%   -> Review Required
 }
 
 # -----------------------------------------------------------------------
