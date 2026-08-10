@@ -102,14 +102,13 @@ ASSUMPTIONS = {
     "rev_growth_floor":    -0.100,   # -10%
     "rev_growth_cap":       0.250,   # +25%
 
-    # Lower-bound safety net applied AFTER the RR x ROIC cap above has
-    # already run, unchanged. Some issuers pass every screening gate yet
-    # carry a negative median historical growth (AMMN, BUMI). Left alone,
-    # that negative rate compounds through the explicit forecast and can
-    # drive fair value negative. If the growth actually in use is below
-    # this floor, including negative, the floor is used instead. If it
-    # already clears the floor, it is left exactly as computed; this is
-    # not a new basis for the number, only a floor under it.
+    # Rescue value, applied AFTER the RR x ROIC cap above has already run,
+    # unchanged. Some issuers pass every screening gate yet carry a
+    # negative median historical growth (AMMN, BUMI). Left alone, that
+    # negative rate compounds through the explicit forecast and can drive
+    # fair value negative. Only fires when growth is actually negative --
+    # a positive rate is left exactly as computed even if it sits below
+    # this value. Not a general minimum, only a floor under negative growth.
     "rev_growth_min_floor": 0.040,   # 4.00%
 
     # Reasonable bounds on moving-average driver ratios.

@@ -193,17 +193,22 @@ def build_drivers(hist, flags):
     # which does not change. Some issuers pass every screening gate with a
     # negative median historical growth (a post-boom pullback, for example),
     # and a negative g_base compounds year over year through the explicit
-    # forecast, occasionally driving fair value negative. If the final
-    # g_base is below the floor -- including negative -- the floor is used
-    # instead. If it already clears the floor, it is left untouched.
+    # forecast, occasionally driving fair value negative.
+    #
+    # The floor only fires when growth started out NEGATIVE -- g_base < 0,
+    # which given the RR x ROIC cap above (clamped at 0.0) only happens when
+    # the historical median itself (g_hist) is negative. A positive g_base
+    # is left exactly as computed even if it sits below the floor value;
+    # this is a rescue for negative growth, not a general minimum.
     g_floor = A["rev_growth_min_floor"]
-    if g_base < g_floor:
+    if g_base < 0:
         flags.warn(
             "Growth floor applied",
-            f"Growth after the reinvestment cap is {g_base*100:.2f}%, below the "
-            f"{g_floor*100:.1f}% floor. {g_floor*100:.1f}% is used instead so the "
-            f"forecast does not compound a declining or negative growth path. "
-            f"This is a lower bound only, not a recalculation of the rate."
+            f"Growth after the reinvestment cap is {g_base*100:.2f}%, negative. "
+            f"{g_floor*100:.1f}% is used instead so the forecast does not compound "
+            f"a declining or negative growth path. This only fires because the "
+            f"rate was negative to begin with; positive rates below "
+            f"{g_floor*100:.1f}% are left untouched."
         )
         g_base = g_floor
 
