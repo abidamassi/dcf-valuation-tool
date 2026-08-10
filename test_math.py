@@ -119,10 +119,10 @@ def main():
     drv = build_drivers(hist, d.flags)
     print("\n[Section 4] Drivers")
     print(f"  Historical revenue growth (median) : {drv['rev_growth_hist']*100:>7.2f}%  (expect 10.00)")
-    print(f"  Historical reinvestment rate       : {drv['rr_hist']*100:>7.2f}%")
-    print(f"  Historical ROIC                    : {drv['roic_hist']*100:>7.2f}%")
-    print(f"  g sustainable = RR x ROIC          : {drv['rr_hist']*drv['roic_hist']*100:>7.2f}%")
-    print(f"  Revenue growth USED                : {drv['rev_growth']*100:>7.2f}%  (= min of the two)")
+    print(f"  Historical reinvestment rate       : {drv['rr_hist']*100:>7.2f}%  (informational only)")
+    print(f"  Historical ROIC                    : {drv['roic_hist']*100:>7.2f}%  (informational only)")
+    print(f"  g sustainable = RR x ROIC          : {drv['rr_hist']*drv['roic_hist']*100:>7.2f}%  (not applied)")
+    print(f"  Revenue growth USED                : {drv['rev_growth']*100:>7.2f}%  (= historical median)")
     print(f"  EBIT margin base  : {drv['ebit_margin']*100:>7.2f}%  (expect 15.00)")
     print(f"  EBIT margin target: {drv['ebit_margin_target']*100:>7.2f}%")
     print(f"  Operating leverage: {drv['oplev_detected']} (correlation {drv['oplev_corr']:.2f})")
@@ -130,12 +130,11 @@ def main():
     print(f"  Capex ratio       : {drv['capex_ratio']*100:>7.2f}%  (expect 6.00)")
     print(f"  NWC ratio         : {drv['nwc_ratio']*100:>7.2f}%  (expect 10.00)")
     print(f"  Tax rate          : {drv['tax_rate']*100:>7.2f}%  (expect 22.00)")
-    # Historical growth must stay at 10%, but the USED growth must be capped
-    # by reinvestment capacity (RR x ROIC), lower than 10%.
+    # Growth used is the historical median, unadjusted by RR x ROIC (that
+    # ratio is informational only now, see s04_drivers.py section 4.7).
     assert abs(drv["rev_growth_hist"] - 0.10) < 1e-6, "historical growth must be 10%"
-    g_sust = drv["rr_hist"] * drv["roic_hist"]
-    assert abs(drv["rev_growth"] - min(0.10, g_sust)) < 1e-9, "growth must be min(historical, RR x ROIC)"
-    assert drv["rev_growth"] < 0.10, "the reinvestment cap must bind here"
+    assert abs(drv["rev_growth"] - drv["rev_growth_hist"]) < 1e-9, \
+        "growth used must equal the historical median, unconstrained"
     assert abs(drv["ebit_margin"] - 0.15) < 1e-6
     assert abs(drv["capex_ratio"] - 0.06) < 1e-6
     assert abs(drv["tax_rate"] - 0.22) < 1e-6

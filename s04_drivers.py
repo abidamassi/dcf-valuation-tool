@@ -123,24 +123,30 @@ def build_drivers(hist, flags):
                            "Effective tax rate", flags)
 
     # -------------------------------------------------------------------
-    # 4.7 FUNDAMENTAL REINVESTMENT-BASED GROWTH CAP
+    # 4.7 REINVESTMENT CAPACITY (INFORMATIONAL CROSS-CHECK, NOT A CAP)
     # -------------------------------------------------------------------
-    # Fundamental growth identity:
-    #     g_sustainable = Reinvestment Rate x ROIC
+    # Growth used for the forecast is simply the median historical revenue
+    # growth (g_hist) computed above. It is no longer capped by what the
+    # reinvestment rate can sustain -- see the note below for why.
     #
-    # A company cannot grow beyond what its reinvestment can fund. Before
-    # this fix, the model forced MAPA to grow at 25% while only setting
-    # aside 20.6% of NOPAT for reinvestment. To grow 25% with a 30.5% ROIC,
-    # the reinvestment rate would need to be 82%. The gap fell into FCFF as
-    # cash that never existed, and that was the main source of the 137% upside.
-    #
-    # Historical components:
+    # RR x ROIC is still computed and shown (drivers table, and as a flag
+    # when it falls short) purely as a cross-check:
     #     NOPAT_t        = EBIT_t x (1 - effective tax rate)
     #     Reinvestment_t = Capex_t - D&A_t + delta NWC_t
     #     RR_t           = Reinvestment_t / NOPAT_t
     #     ROIC_t         = NOPAT_t / Invested Capital_t-1
+    #     g_sustainable  = RR_hist x ROIC_hist
     #
-    # g used = min(median historical g, sustainable g)
+    # This ratio treats reinvestment purely as net cash spent on capex and
+    # working capital. That penalises capital-light growth -- same-store
+    # sales, pricing power, working-capital efficiency -- exactly like "no
+    # capacity to grow" whenever Capex happens to run below D&A. That drove
+    # RR negative and g_sustainable to a hard 0% for issuers with perfectly
+    # healthy top-line growth (MAPI at +13.2% historical, PGAS, TLKM), which
+    # is a worse distortion than the one this cap was originally built to
+    # catch (MAPA extrapolated at 25% against an 82%-implied reinvestment
+    # rate). So the cap is now informational only.
+    g_base = g_hist
     ebit_h = pd.to_numeric(hist.loc["ebit"], errors="coerce")
     capex_h = pd.to_numeric(hist.loc["capex"], errors="coerce")
     da_h = pd.to_numeric(hist.loc["dep_amort"], errors="coerce")
@@ -169,42 +175,37 @@ def build_drivers(hist, flags):
         g_sust = max(rr_hist * roic_hist, 0.0)
         if g_sust < g_hist:
             flags.warn(
-                "Growth capped by reinvestment",
-                f"Median historical growth of {g_hist*100:.2f}% EXCEEDS what "
-                f"reinvestment can fund. Historical RR {rr_hist*100:.1f}% x "
-                f"ROIC {roic_hist*100:.1f}% = {g_sust*100:.2f}%. Growth lowered "
-                f"to {g_sust*100:.2f}% to stay economically consistent."
+                "Reinvestment capacity below historical growth",
+                f"Historical RR {rr_hist*100:.1f}% x ROIC {roic_hist*100:.1f}% "
+                f"implies a sustainable growth of only {g_sust*100:.2f}%, below "
+                f"the historical median of {g_hist*100:.2f}% actually used. "
+                f"Informational only -- growth used is not adjusted for this."
             )
-            g_base = g_sust
-        else:
-            g_base = g_hist
     else:
-        g_base = g_hist
         rr_hist = np.nan
         roic_hist = np.nan
-        flags.warn("Growth capped by reinvestment",
-                   "Historical RR or ROIC could not be computed. Growth uses the "
-                   "historical median with no fundamental cap applied.")
+        flags.warn("Reinvestment capacity",
+                   "Historical RR or ROIC could not be computed, so the "
+                   "reinvestment cross-check is unavailable. Growth used is "
+                   "unaffected -- it is the historical median regardless.")
 
     # -------------------------------------------------------------------
     # 4.7b GROWTH FLOOR (lower-bound safety net, not a new basis)
     # -------------------------------------------------------------------
-    # Applied only AFTER g_base above is fully settled by the RR x ROIC cap,
-    # which does not change. Some issuers pass every screening gate with a
-    # negative median historical growth (a post-boom pullback, for example),
-    # and a negative g_base compounds year over year through the explicit
-    # forecast, occasionally driving fair value negative.
+    # g_base is the historical median growth (g_hist) at this point. Some
+    # issuers pass every screening gate with a negative median historical
+    # growth (a post-boom pullback, for example), and a negative g_base
+    # compounds year over year through the explicit forecast, occasionally
+    # driving fair value negative.
     #
-    # The floor only fires when growth started out NEGATIVE -- g_base < 0,
-    # which given the RR x ROIC cap above (clamped at 0.0) only happens when
-    # the historical median itself (g_hist) is negative. A positive g_base
-    # is left exactly as computed even if it sits below the floor value;
-    # this is a rescue for negative growth, not a general minimum.
+    # The floor only fires when growth is actually NEGATIVE. A positive
+    # g_base is left exactly as computed even if it sits below the floor
+    # value; this is a rescue for negative growth, not a general minimum.
     g_floor = A["rev_growth_min_floor"]
     if g_base < 0:
         flags.warn(
             "Growth floor applied",
-            f"Growth after the reinvestment cap is {g_base*100:.2f}%, negative. "
+            f"Historical median growth is {g_base*100:.2f}%, negative. "
             f"{g_floor*100:.1f}% is used instead so the forecast does not compound "
             f"a declining or negative growth path. This only fires because the "
             f"rate was negative to begin with; positive rates below "

@@ -379,15 +379,19 @@ with c1:
     styled_table(drivers_table(drv), hide_index=True)
 with c2:
     g_hist = drv.get("rev_growth_hist", np.nan)
-    if np.isfinite(g_hist) and drv["rev_growth"] < g_hist - 1e-9:
-        callout(f"<b>Growth constrained by reinvestment.</b> Median historical "
-                f"growth of {f_pct(g_hist)} exceeds what reinvestment can fund. "
-                f"Reinvestment rate {f_pct(drv.get('rr_hist', np.nan), 1)} multiplied "
-                f"by ROIC {f_pct(drv.get('roic_hist', np.nan), 1)} gives "
-                f"{f_pct(drv['rev_growth'])}, which is the rate applied.")
+    if np.isfinite(g_hist) and drv["rev_growth"] > g_hist + 1e-9:
+        callout(f"<b>Growth floor applied.</b> Median historical growth of "
+                f"{f_pct(g_hist)} is negative, so {f_pct(drv['rev_growth'])} is "
+                f"used instead as a lower-bound safety net rather than "
+                f"extrapolating a declining growth path.")
     else:
-        callout(f"<b>Growth not constrained.</b> Median historical growth of "
-                f"{f_pct(g_hist)} is within what reinvestment can fund.")
+        callout(f"<b>Growth follows the historical median.</b> Revenue growth "
+                f"used for the forecast is the company's own median historical "
+                f"growth, {f_pct(drv['rev_growth'])}, unadjusted. Reinvestment "
+                f"rate {f_pct(drv.get('rr_hist', np.nan), 1)} and ROIC "
+                f"{f_pct(drv.get('roic_hist', np.nan), 1)} are shown as a "
+                f"cross-check only (see data quality warnings if reinvestment "
+                f"capacity falls short of it).")
 
     if drv.get("oplev_detected"):
         callout(f"<b>Margin expansion active.</b> Revenue and EBIT margin correlate "

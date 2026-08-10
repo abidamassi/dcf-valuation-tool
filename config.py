@@ -62,7 +62,7 @@ ASSUMPTIONS = {
     # B. PROJECTION ASSUMPTIONS
     # -------------------------------------------------------------------
     "forecast_years":       5,       # slider 5 - 10
-    "terminal_growth":      0.040,   # 4.00%   slider 0.000 - 0.060
+    "terminal_growth":      0.025,   # 2.50%   slider 0.000 - 0.060
     "mid_year_convention":  True,    # Cash flow is assumed to occur mid-year
 
     # Minimum spread of WACC minus terminal growth. Previously 50bps, which
