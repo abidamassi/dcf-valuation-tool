@@ -90,7 +90,15 @@ html, body, [class*="css"], .stApp, button, input, textarea, select {{
 }}
 .stApp {{ background:{COLORS['white']}; color:var(--ink); }}
 .block-container {{ padding-top:2.0rem; padding-bottom:3rem; max-width:1180px; }}
-#MainMenu, footer, header {{ visibility:hidden; }}
+#MainMenu, footer {{ visibility:hidden; }}
+/* Hide only the Streamlit toolbar clutter (hamburger menu, Deploy button).
+   The header itself must stay: it's also where stExpandSidebarButton lives,
+   the control that reopens the sidebar once collapsed. Hiding the whole
+   header (visibility:hidden) hides that button too and strands the user
+   with no way back in. */
+header[data-testid="stHeader"] {{ background:transparent; }}
+header[data-testid="stHeader"] [data-testid="stMainMenuButton"],
+header[data-testid="stHeader"] [data-testid="stAppDeployButton"] {{ display:none; }}
 
 /* ---------- SIDEBAR ---------- */
 section[data-testid="stSidebar"] {{ background:var(--navy); }}
