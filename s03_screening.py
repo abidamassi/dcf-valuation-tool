@@ -1,28 +1,28 @@
 """
 =============================================================================
-SECTION 3 - SCREENING KELAYAKAN MODEL
+SECTION 3 - MODEL ELIGIBILITY SCREENING
 =============================================================================
-TUJUAN  : Menentukan apakah satu emiten LAYAK dinilai dengan FCFF/WACC DCF.
-          Ini bukan screening "saham menarik atau tidak". Ini screening
-          "modelnya berlaku atau tidak". Emiten yang gagal akan mendapat
-          status CANNOT PROCEED beserta alasan spesifiknya.
+PURPOSE : Determine whether an issuer is ELIGIBLE for FCFF/WACC DCF
+          valuation. This is not a "is the stock attractive" screen. It is
+          an "does the model even apply" screen. Issuers that fail get a
+          CANNOT PROCEED status along with the specific reason.
 
-          Prinsip: emiten keuangan (bank, asuransi, multifinance) SELALU
-          ditolak di sini karena utang bagi mereka adalah bahan baku, bukan
-          sumber pendanaan. Enterprise Value tidak punya arti. Mereka akan
-          ditangani tool DDM/GGM terpisah.
+          Principle: financial issuers (banks, insurance, multifinance) are
+          ALWAYS rejected here because debt is their raw material, not a
+          funding source. Enterprise Value has no meaning for them. They
+          are handled by a separate DDM/GGM tool.
 
-RUMUS   : Gate 1  Sektor bukan Financial Services
-          Gate 2  Jumlah tahun laporan >= 4
-          Gate 3  Revenue positif di seluruh periode
-          Gate 4  EBIT positif >= 2 dari 3 tahun terakhir
-          Gate 5  Market cap >= IDR 1 triliun
+FORMULA : Gate 1  Sector is not Financial Services
+          Gate 2  Years of filings >= 4
+          Gate 3  Revenue positive in every period
+          Gate 4  EBIT positive in >= 2 of the last 3 years
+          Gate 5  Market cap >= IDR 1 trillion
           Gate 6  1.0x <= Trailing P/E <= 60.0x
           Gate 7  Total Equity > 0
           Gate 8  Total Debt / (Total Debt + Equity) <= 80%
           Gate 9  Net Debt / EBITDA <= 6.0x
           Gate 10 EBIT / Interest Expense >= 1.0x
-          Gate 11 EBITDA periode terakhir > 0
+          Gate 11 Latest period EBITDA > 0
 
 OUTPUT  : dict {passed: bool, status: str, failed_gates: list, detail: DataFrame}
 =============================================================================
@@ -36,32 +36,32 @@ from config import SCREENING
 
 def run_screening(data, hist):
     """
-    Jalankan seluruh gate. Mengembalikan hasil lengkap, bukan hanya lolos
-    atau tidak, supaya pengguna tahu gate mana yang gagal dan angkanya berapa.
+    Run every gate. Returns the full result, not just pass/fail, so the user
+    knows exactly which gate failed and what the number was.
     """
     S = SCREENING
-    results = []          # (no, nama_gate, nilai_aktual, kriteria, lolos)
+    results = []          # (no, gate_name, actual_value, criteria, passed)
 
     def add(no, name, actual, criteria, passed):
         results.append({
-            "No": no, "Gate": name, "Nilai": actual,
-            "Kriteria": criteria, "Status": "PASS" if passed else "FAIL"
+            "No": no, "Gate": name, "Value": actual,
+            "Criteria": criteria, "Status": "Passed" if passed else "Failed"
         })
 
-    # ---------------- Gate 1: sektor ----------------
+    # ---------------- Gate 1: sector ----------------
     sector = (data.sector or "").strip()
     industry = (data.industry or "").strip().lower()
     is_financial = sector in S["excluded_sectors"] or any(
         kw in industry for kw in S["excluded_industry_keywords"]
     )
-    add(1, "Sektor non-keuangan",
+    add(1, "Non-financial sector",
         f"{sector or 'n/a'} / {data.industry or 'n/a'}",
-        "Bukan Financial Services", not is_financial)
+        "Not Financial Services", not is_financial)
 
-    # ---------------- Gate 2: kecukupan tahun ----------------
+    # ---------------- Gate 2: sufficient history ----------------
     n_years = hist.shape[1] if hist is not None else 0
-    add(2, "Ketersediaan laporan tahunan", f"{n_years} tahun",
-        f">= {S['min_annual_years']} tahun", n_years >= S["min_annual_years"])
+    add(2, "Annual filing availability", f"{n_years} years",
+        f">= {S['min_annual_years']} years", n_years >= S["min_annual_years"])
 
     if hist is None or n_years == 0:
         return _compile(results, data)
@@ -70,17 +70,17 @@ def run_screening(data, hist):
     ebit = hist.loc["ebit"]
     ebitda = hist.loc["ebitda"]
 
-    # ---------------- Gate 3: revenue positif ----------------
+    # ---------------- Gate 3: positive revenue ----------------
     rev_ok = bool(rev.notna().all() and (rev > 0).all())
-    add(3, "Revenue positif seluruh periode",
-        "ya" if rev_ok else "tidak / ada NaN", "Semua periode > 0", rev_ok)
+    add(3, "Revenue positive every period",
+        "yes" if rev_ok else "no / contains NaN", "All periods > 0", rev_ok)
 
-    # ---------------- Gate 4: EBIT positif ----------------
+    # ---------------- Gate 4: positive EBIT ----------------
     lb = S["ebit_lookback_years"]
     recent_ebit = ebit.iloc[-lb:]
     n_pos = int((recent_ebit > 0).sum())
-    add(4, "EBIT positif", f"{n_pos} dari {len(recent_ebit)} tahun terakhir",
-        f">= {S['min_ebit_positive_years']} dari {lb} tahun",
+    add(4, "EBIT positive", f"{n_pos} of the last {len(recent_ebit)} years",
+        f">= {S['min_ebit_positive_years']} of {lb} years",
         n_pos >= S["min_ebit_positive_years"])
 
     # ---------------- Gate 5: market cap ----------------
@@ -90,39 +90,39 @@ def run_screening(data, hist):
         f">= IDR {S['min_market_cap_idr']/1e12:,.0f} tn",
         bool(np.isfinite(mcap) and mcap >= S["min_market_cap_idr"]))
 
-    # ---------------- Gate 6: P/E berjalan ----------------
+    # ---------------- Gate 6: trailing P/E ----------------
     pe = data.trailing_pe
     pe_ok = bool(np.isfinite(pe) and S["pe_min"] <= pe <= S["pe_max"])
     add(6, "Trailing P/E",
-        f"{pe:.2f}x" if np.isfinite(pe) else "n/a (negatif atau tidak tersedia)",
+        f"{pe:.2f}x" if np.isfinite(pe) else "n/a (negative or unavailable)",
         f"{S['pe_min']:.0f}x - {S['pe_max']:.0f}x", pe_ok)
 
-    # ---------------- Gate 7: ekuitas positif ----------------
+    # ---------------- Gate 7: positive equity ----------------
     eq = float(hist.loc["equity"].iloc[-1]) if pd.notna(hist.loc["equity"].iloc[-1]) else np.nan
     eq_ok = bool(np.isfinite(eq) and eq > 0)
-    add(7, "Total ekuitas positif",
+    add(7, "Total equity positive",
         f"IDR {eq/1e12:,.2f} tn" if np.isfinite(eq) else "n/a",
-        "> 0 (ekuitas negatif merusak bobot WACC)", eq_ok)
+        "> 0 (negative equity breaks the WACC weights)", eq_ok)
 
-    # ---------------- Gate 8: struktur modal ----------------
+    # ---------------- Gate 8: capital structure ----------------
     d2c = float(hist.loc["debt_to_cap"].iloc[-1]) if pd.notna(hist.loc["debt_to_cap"].iloc[-1]) else np.nan
     d2c_ok = bool(np.isfinite(d2c) and d2c <= S["max_debt_to_capital"])
     add(8, "Debt / (Debt + Equity)",
         f"{d2c*100:.1f}%" if np.isfinite(d2c) else "n/a",
         f"<= {S['max_debt_to_capital']*100:.0f}%", d2c_ok)
 
-    # ---------------- Gate 9: leverage terhadap EBITDA ----------------
+    # ---------------- Gate 9: leverage against EBITDA ----------------
     nde = float(hist.loc["net_debt_ebitda"].iloc[-1]) if pd.notna(hist.loc["net_debt_ebitda"].iloc[-1]) else np.nan
-    # Net cash (nilai negatif) otomatis lolos.
+    # Net cash (negative value) passes automatically.
     nde_ok = bool(np.isfinite(nde) and nde <= S["max_net_debt_ebitda"])
     add(9, "Net Debt / EBITDA",
         f"{nde:.2f}x" if np.isfinite(nde) else "n/a",
-        f"<= {S['max_net_debt_ebitda']:.1f}x (negatif = net cash, lolos)", nde_ok)
+        f"<= {S['max_net_debt_ebitda']:.1f}x (negative = net cash, passes)", nde_ok)
 
     # ---------------- Gate 10: interest coverage ----------------
     int_exp_last = hist.loc["interest_exp"].iloc[-1]
     if pd.isna(int_exp_last) or int_exp_last == 0:
-        cov_ok, cov_txt = True, "tidak ada beban bunga material"
+        cov_ok, cov_txt = True, "no material interest expense"
     else:
         cov = float(hist.loc["int_coverage"].iloc[-1])
         cov_ok = bool(np.isfinite(cov) and cov >= S["min_interest_coverage"])
@@ -130,38 +130,39 @@ def run_screening(data, hist):
     add(10, "EBIT / Interest Expense", cov_txt,
         f">= {S['min_interest_coverage']:.1f}x", cov_ok)
 
-    # ---------------- Gate 11: EBITDA positif ----------------
+    # ---------------- Gate 11: positive EBITDA ----------------
     eb_last = float(ebitda.iloc[-1]) if pd.notna(ebitda.iloc[-1]) else np.nan
     eb_ok = bool(np.isfinite(eb_last) and eb_last > 0)
-    add(11, "EBITDA periode terakhir",
+    add(11, "Latest period EBITDA",
         f"IDR {eb_last/1e9:,.0f} bn" if np.isfinite(eb_last) else "n/a",
         "> 0", eb_ok)
 
     # ---------------- Gate 12: holding company ----------------
-    # DCF konsolidasi mengambil 100% arus kas anak usaha lalu mengurangi
-    # kepentingan non-pengendali pada NILAI BUKU. Untuk holdco, nilai buku MI
-    # jauh berbeda dari nilai ekonomisnya, dan holding discount yang secara
-    # historis melekat pada emiten seperti INDF tidak akan pernah tertangkap.
-    # Ini FLAG INFORMASIONAL, bukan gate penolak. NCI besar tidak otomatis
-    # berarti holding company murni. Bisa juga struktur JV pertambangan yang
-    # sah, atau satu anak usaha strategis yang sengaja tidak diakuisisi penuh.
-    # Emiten tetap dihitung, rating tetap murni mengikuti threshold
-    # BUY/HOLD/SELL. Yang diberikan hanya peringatan agar pengguna memeriksa
-    # apakah bridge NCI di nilai buku cukup representatif.
+    # A consolidated DCF takes 100% of a subsidiary's cash flow and then
+    # deducts non-controlling interest at BOOK VALUE. For a holdco, NCI's
+    # book value differs greatly from its economic value, and the holding
+    # discount that historically attaches to issuers like INDF would never
+    # be captured. This is an INFORMATIONAL FLAG, not a rejecting gate. A
+    # large NCI doesn't automatically mean a pure holding company. It could
+    # also be a legitimate mining JV structure, or one strategic subsidiary
+    # deliberately not fully acquired. The issuer is still valued, and the
+    # rating still follows the BUY/HOLD/SELL threshold purely. Only a
+    # warning is given, so the user checks whether the book-value NCI
+    # bridge is representative enough.
     mi = float(hist.loc["minority"].iloc[-1]) if pd.notna(hist.loc["minority"].iloc[-1]) else 0.0
     mi_ratio = mi / eq if (np.isfinite(eq) and eq > 0) else np.nan
-    add(12, "Minority Interest / Ekuitas (informasional)",
+    add(12, "Minority Interest / Equity (informational)",
         f"{mi_ratio*100:.1f}%" if np.isfinite(mi_ratio) else "n/a",
-        "Tidak menolak. Di atas 15% perlu tinjauan SOTP", True)
+        "Does not reject. Above 15% warrants an SOTP review", True)
 
     if np.isfinite(mi_ratio) and mi_ratio > S["max_minority_to_equity"]:
         data.flags.warn(
-            "Struktur NCI",
-            f"Kepentingan non-pengendali {mi_ratio*100:.1f}% dari ekuitas, di atas "
-            f"ambang {S['max_minority_to_equity']*100:.0f}%. DCF konsolidasi "
-            f"mengambil 100% arus kas anak usaha lalu mengurangi NCI pada NILAI "
-            f"BUKU. Kalau anak usaha punya valuasi pasar sendiri, selisihnya bisa "
-            f"material. Pertimbangkan tinjauan SOTP sebagai pembanding."
+            "NCI structure",
+            f"Non-controlling interest is {mi_ratio*100:.1f}% of equity, above "
+            f"the {S['max_minority_to_equity']*100:.0f}% threshold. A consolidated "
+            f"DCF takes 100% of the subsidiary's cash flow and then deducts NCI "
+            f"at BOOK VALUE. If the subsidiary has its own market valuation, the "
+            f"gap can be material. Consider an SOTP review as a cross-check."
         )
 
     return _compile(results, data)
@@ -169,21 +170,20 @@ def run_screening(data, hist):
 
 def _compile(results, data):
     detail = pd.DataFrame(results)
-    failed = detail.loc[detail["Status"] == "FAIL", "Gate"].tolist()
+    failed = detail.loc[detail["Status"] == "Failed", "Gate"].tolist()
     passed = len(failed) == 0
 
     if passed:
-        status = "ELIGIBLE - lanjut ke perhitungan DCF"
+        status = "ELIGIBLE - proceeding to the DCF calculation"
     else:
-        # Bedakan penolakan karena jenis usaha vs karena fundamental
-        if "Sektor non-keuangan" in failed:
-            status = ("CANNOT PROCEED - emiten sektor keuangan. "
-                      "FCFF/WACC DCF tidak berlaku. Gunakan tool DDM/GGM.")
-        elif "Minority Interest / Ekuitas" in failed:
-            status = ("CANNOT PROCEED - struktur holding company. Porsi "
-                      "kepentingan non-pengendali terlalu besar sehingga DCF "
-                      "konsolidasi menghasilkan nilai yang menyesatkan. "
-                      "Gunakan pendekatan SOTP.")
+        # Distinguish rejection due to business type vs. fundamentals
+        if "Non-financial sector" in failed:
+            status = ("CANNOT PROCEED - financial sector issuer. "
+                      "FCFF/WACC DCF does not apply. Use a DDM/GGM tool instead.")
+        elif "Minority Interest / Equity" in failed:
+            status = ("CANNOT PROCEED - holding company structure. The "
+                      "non-controlling interest is too large, so a consolidated "
+                      "DCF produces a misleading value. Use an SOTP approach instead.")
         else:
             status = "CANNOT PROCEED - " + "; ".join(failed)
 

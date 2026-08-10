@@ -1,23 +1,23 @@
 """
 =============================================================================
-SECTION 2 - EKSTRAKSI LINE ITEM DAN PEMERIKSAAN KUALITAS DATA
+SECTION 2 - LINE ITEM EXTRACTION AND DATA QUALITY CHECKS
 =============================================================================
-TUJUAN  : Menarik pos-pos laporan keuangan yang dibutuhkan DCF ke dalam satu
-          struktur seragam, dan MENANDAI setiap pos yang kosong (NaN) atau
-          bernilai nol. Penandaan ini bukan kosmetik. Interest Expense yang
-          NaN akan membuat Cost of Debt salah, dan pengguna harus tahu.
+PURPOSE : Pull the financial statement line items the DCF needs into one
+          uniform structure, and FLAG every item that is empty (NaN) or
+          zero. This flagging is not cosmetic. A NaN Interest Expense will
+          make Cost of Debt wrong, and the user needs to know.
 
-RUMUS   : Turunan yang dihitung di sini
+FORMULA : Derived figures computed here
             EBITDA           = EBIT + D&A
             Net Debt         = Total Debt - Cash & Equivalents
-            NWC              = Piutang + Persediaan - Utang usaha
+            NWC              = Receivables + Inventory - Payables
             Effective Tax    = Tax Provision / Pretax Income
             Interest Coverage= EBIT / Interest Expense
             D/(D+E)          = Total Debt / (Total Debt + Total Equity)
             Invested Capital = Total Debt + Total Equity - Cash
 
-OUTPUT  : DataFrame `hist` (baris = pos, kolom = tahun, satuan IDR),
-          dan flag terisi di data.flags.
+OUTPUT  : `hist` DataFrame (rows = line items, columns = years, in IDR),
+          with flags recorded in data.flags.
 =============================================================================
 """
 
@@ -29,9 +29,9 @@ from utils import pick_row, safe_div
 
 
 # -----------------------------------------------------------------------
-# 2.1 KAMUS LABEL YFINANCE
+# 2.1 YFINANCE LABEL DICTIONARY
 # -----------------------------------------------------------------------
-# yfinance tidak konsisten menamai baris. Urutan kandidat = urutan prioritas.
+# yfinance is inconsistent about row naming. Candidate order = priority order.
 LABELS = {
     # Income statement
     "revenue":      ["Total Revenue", "Operating Revenue", "Revenue"],
@@ -56,7 +56,7 @@ LABELS = {
     "capex":        ["Capital Expenditure", "Purchase Of PPE",
                      "Net PPE Purchase And Sale", "Purchase Of Business"],
 
-    # Baris tambahan HANYA untuk derivasi D&A fallback (EBITDA - EBIT)
+    # Extra row used ONLY for the D&A fallback derivation (EBITDA - EBIT)
     "ebitda_reported": ["EBITDA", "Normalized EBITDA"],
 
     # Balance sheet
@@ -79,23 +79,23 @@ LABELS = {
     "total_assets": ["Total Assets"],
 }
 
-# Pos yang kalau hilang membuat DCF tidak bisa jalan sama sekali.
-# dep_amort SENGAJA tidak dimasukkan di sini. Kalau hilang, ada dua jaring
-# pengaman: (1) derivasi dari EBITDA - EBIT kalau EBITDA dilaporkan, dan
-# (2) fallback ke 0% dari revenue di Section 4 dengan flag eksplisit.
-# Sebelumnya dep_amort ada di CRITICAL dan menghentikan seluruh pipeline
-# hanya karena satu baris cashflow tidak ketemu labelnya, walau ada
-# fallback yang aman di bawahnya. Ini bug yang sudah diperbaiki.
+# Line items whose absence makes the DCF unable to run at all.
+# dep_amort is DELIBERATELY excluded here. If it's missing, there are two
+# safety nets: (1) derivation from EBITDA - EBIT when EBITDA is reported, and
+# (2) a fallback to 0% of revenue in Section 4 with an explicit flag.
+# dep_amort used to be in CRITICAL and would halt the entire pipeline just
+# because one cash flow row's label wasn't found, even though a safe
+# fallback existed below it. That bug has since been fixed.
 CRITICAL = ["revenue", "ebit", "capex", "equity", "cash"]
 
 
 # -----------------------------------------------------------------------
-# 2.2 EKSTRAKSI
+# 2.2 EXTRACTION
 # -----------------------------------------------------------------------
 def build_history(data):
     """
-    Bangun DataFrame historis dari objek CompanyData hasil Section 1.
-    Mengembalikan (hist, ok). `ok` False kalau pos kritikal tidak ada.
+    Build the historical DataFrame from the CompanyData object produced by
+    Section 1. Returns (hist, ok). `ok` is False if a critical item is missing.
     """
     flags = data.flags
     src = {
@@ -115,7 +115,7 @@ def build_history(data):
         "ebitda_reported": "income",
     }
 
-    # Sumbu tahun diambil dari income statement
+    # The year axis is taken from the income statement
     if data.income is None or data.income.empty:
         flags.missing("Income statement")
         return None, False
@@ -127,36 +127,36 @@ def build_history(data):
         if series is None:
             rows[key] = pd.Series([np.nan] * len(years), index=years)
             if key in CRITICAL:
-                flags.missing(key, "Pos kritikal tidak ditemukan di yfinance")
+                flags.missing(key, "Critical line item not found in yfinance")
             elif key in ("dep_amort", "ebitda_reported"):
-                pass    # ditangani alur fallback D&A, flag dicatat di sana
+                pass    # handled by the D&A fallback flow, flag recorded there
             else:
                 flags.missing(key)
         else:
             rows[key] = series.reindex(years)
 
     hist = pd.DataFrame(rows).T
-    hist = hist[sorted(hist.columns)]           # kronologis
+    hist = hist[sorted(hist.columns)]           # chronological
 
-    # ---- buang periode yang revenue-nya kosong ----
-    # yfinance kadang mengembalikan satu kolom tahun tambahan yang datanya
-    # nyaris seluruhnya NaN (periode tertua di luar cakupan, atau kolom TTM
-    # parsial). Kolom seperti ini merusak moving average kalau dibiarkan.
+    # ---- drop periods with empty revenue ----
+    # yfinance sometimes returns one extra year column that's almost
+    # entirely NaN (an oldest period out of coverage, or a partial TTM
+    # column). Columns like this corrupt the moving average if left in.
     empty_years = hist.columns[hist.loc["revenue"].isna()]
     if len(empty_years) > 0:
-        flags.warn("Periode kosong",
-                   f"{len(empty_years)} periode dibuang karena revenue kosong: "
+        flags.warn("Empty period",
+                   f"{len(empty_years)} period(s) dropped for missing revenue: "
                    f"{[str(c)[:10] for c in empty_years]}")
         hist = hist.drop(columns=empty_years)
 
-    # ---- normalisasi tanda ----
-    # Capex di yfinance bertanda negatif (arus keluar). Kita simpan positif.
+    # ---- sign normalisation ----
+    # Capex in yfinance is signed negative (an outflow). We store it positive.
     hist.loc["capex"] = hist.loc["capex"].abs()
-    # Interest expense kadang negatif kadang positif. Simpan positif.
+    # Interest expense is sometimes negative, sometimes positive. Store it positive.
     hist.loc["interest_exp"] = hist.loc["interest_exp"].abs()
     hist.loc["dep_amort"] = hist.loc["dep_amort"].abs()
 
-    # ---- fallback total debt ----
+    # ---- total debt fallback ----
     td = hist.loc["total_debt"]
     if td.isna().all():
         sd = hist.loc["short_debt"].fillna(0)
@@ -164,26 +164,26 @@ def build_history(data):
         combined = sd + ld
         if combined.abs().sum() > 0:
             hist.loc["total_debt"] = combined
-            flags.warn("total_debt", "Dijumlahkan dari Current Debt + Long Term Debt.")
+            flags.warn("total_debt", "Summed from Current Debt + Long Term Debt.")
         else:
             hist.loc["total_debt"] = 0.0
-            flags.zero("total_debt", "Tidak ada data utang. Diasumsikan nol, verifikasi.")
+            flags.zero("total_debt", "No debt data. Assumed zero, please verify.")
 
     hist.loc["minority"] = hist.loc["minority"].fillna(0.0)
 
-    # ---- fallback D&A berlapis ----
-    # Baris "EBITDA" di yfinance BUKAN selalu EBIT + D&A murni. Sering itu
-    # versi normalized yang sudah menyerap pos non-operasional. Derivasi
-    # EBITDA dikurangi EBIT karena itu WAJIB divalidasi silang.
+    # ---- layered D&A fallback ----
+    # The "EBITDA" row in yfinance is NOT always pure EBIT + D&A. It's often
+    # a normalized version that has already absorbed non-operating items.
+    # The EBITDA-minus-EBIT derivation MUST therefore be cross-validated.
     #
-    # Uji: D&A / Net PP&E harus berada di rentang wajar. Terlalu tinggi
-    # berarti derivasi menyerap beban non-penyusutan. Terlalu rendah berarti
-    # baris EBITDA-nya kosong atau salah.
+    # Test: D&A / Net PP&E must fall within a reasonable range. Too high
+    # means the derivation absorbed non-depreciation expense. Too low means
+    # the EBITDA row is empty or wrong.
     #
-    # Bukti empiris yang memicu perbaikan ini:
-    #   MAPA  derivasi menghasilkan D&A/Revenue 6.79%, realitas sekitar 2.8%
-    #   INDF  derivasi menghasilkan D&A/Revenue 0.22%, mustahil untuk
-    #         manufaktur seukuran itu
+    # Empirical evidence that triggered this fix:
+    #   MAPA  the derivation gave D&A/Revenue of 6.79%, reality is around 2.8%
+    #   INDF  the derivation gave D&A/Revenue of 0.22%, implausible for a
+    #         manufacturer of that size
     if hist.loc["dep_amort"].isna().all():
         eb_rep = hist.loc["ebitda_reported"]
         derived_ok = False
@@ -201,36 +201,36 @@ def build_history(data):
                     hist.loc["dep_amort"] = derived
                     derived_ok = True
                     flags.warn("dep_amort",
-                               f"Tidak ada baris D&A di cashflow. Diderivasi dari "
-                               f"EBITDA dikurangi EBIT. Lulus uji silang: "
-                               f"D&A/Net PP&E = {med*100:.1f}% (wajar).")
+                               f"No D&A line in the cash flow statement. Derived from "
+                               f"EBITDA minus EBIT. Passed the cross-check: "
+                               f"D&A/Net PP&E = {med*100:.1f}% (reasonable).")
                 else:
                     flags.warn("dep_amort",
-                               f"Derivasi EBITDA dikurangi EBIT DITOLAK. "
-                               f"D&A/Net PP&E hasil derivasi = {med*100:.1f}%, "
-                               f"di luar rentang wajar {lo*100:.0f}-{hi*100:.0f}%. "
-                               f"Baris EBITDA yfinance kemungkinan versi normalized "
-                               f"yang menyerap pos non-operasional.")
+                               f"EBITDA-minus-EBIT derivation REJECTED. "
+                               f"Derived D&A/Net PP&E = {med*100:.1f}%, outside the "
+                               f"reasonable range of {lo*100:.0f}-{hi*100:.0f}%. "
+                               f"The yfinance EBITDA line is likely a normalized "
+                               f"figure that absorbs non-operating items.")
 
         if not derived_ok:
-            # Asumsi steady state: maintenance capex kira-kira sebesar D&A.
-            # Konsekuensinya D&A dan Capex saling meniadakan di FCFF, sehingga
-            # FCFF = NOPAT dikurangi delta NWC. Konservatif dan transparan.
+            # Steady-state assumption: maintenance capex roughly equals D&A.
+            # As a result D&A and Capex cancel out in FCFF, so
+            # FCFF = NOPAT minus delta NWC. Conservative and transparent.
             cx = hist.loc["capex"]
             if not cx.isna().all():
                 hist.loc["dep_amort"] = cx
                 flags.warn("dep_amort",
-                           "D&A diproksi SAMA DENGAN Capex (asumsi steady state). "
-                           "Akibatnya D&A dan Capex saling meniadakan di FCFF, "
-                           "sehingga FCFF = NOPAT dikurangi delta NWC. Ini pilihan "
-                           "konservatif, bukan angka laporan.")
+                           "D&A proxied as EQUAL TO Capex (steady-state assumption). "
+                           "As a result D&A and Capex cancel out in FCFF, so "
+                           "FCFF = NOPAT minus delta NWC. This is a conservative "
+                           "choice, not a reported figure.")
             else:
                 flags.warn("dep_amort",
-                           "D&A dan Capex sama-sama tidak tersedia. FCFF tidak "
-                           "dapat dihitung dengan andal.")
+                           "Neither D&A nor Capex is available. FCFF cannot be "
+                           "computed reliably.")
 
     # -------------------------------------------------------------------
-    # 2.3 TURUNAN
+    # 2.3 DERIVED FIGURES
     # -------------------------------------------------------------------
     hist.loc["ebitda"] = hist.loc["ebit"] + hist.loc["dep_amort"].fillna(0)
     hist.loc["net_debt"] = hist.loc["total_debt"].fillna(0) - hist.loc["cash"].fillna(0)
@@ -239,8 +239,8 @@ def build_history(data):
            + hist.loc["inventory"].fillna(0)
            - hist.loc["payable"].fillna(0))
     if (hist.loc["receivable"].isna().all() and hist.loc["inventory"].isna().all()):
-        flags.warn("NWC", "Piutang dan persediaan tidak tersedia. NWC dianggap nol, "
-                          "delta working capital tidak akan dimodelkan.")
+        flags.warn("NWC", "Receivables and inventory are unavailable. NWC assumed "
+                          "zero, so delta working capital will not be modelled.")
         nwc = pd.Series(0.0, index=hist.columns)
     hist.loc["nwc"] = nwc
 
@@ -260,12 +260,12 @@ def build_history(data):
     hist.loc["rev_growth"] = hist.loc["revenue"].pct_change()
 
     # -------------------------------------------------------------------
-    # 2.4 PEMERIKSAAN KUALITAS
+    # 2.4 QUALITY CHECKS
     # -------------------------------------------------------------------
-    # dep_amort SENGAJA tidak diperiksa di sini. Pos itu punya alur fallback
-    # sendiri di atas yang sudah mencatat satu flag penjelas. Memeriksanya
-    # lagi di sini menghasilkan flag MISSING dobel yang menyesatkan, seolah
-    # datanya hilang total padahal sudah ditangani.
+    # dep_amort is DELIBERATELY not checked here. That item has its own
+    # fallback flow above which already logged one explanatory flag.
+    # Checking it again here would produce a misleading duplicate MISSING
+    # flag, as if the data were entirely absent when it has already been handled.
     for key in ["revenue", "ebit", "capex", "cash", "equity",
                 "total_debt", "interest_exp", "tax", "pretax", "net_income"]:
         flags.check_series(hist.loc[key], key)
@@ -279,10 +279,10 @@ def build_history(data):
 
 
 # -----------------------------------------------------------------------
-# 2.5 SNAPSHOT PERIODE TERAKHIR
+# 2.5 LATEST-PERIOD SNAPSHOT
 # -----------------------------------------------------------------------
 def latest_snapshot(hist):
-    """Ambil kolom terakhir sebagai posisi neraca terkini."""
+    """Take the last column as the current balance sheet position."""
     last = hist.columns[-1]
     def g(k, default=np.nan):
         v = hist.loc[k, last]

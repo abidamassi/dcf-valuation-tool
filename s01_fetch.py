@@ -1,28 +1,28 @@
 """
 =============================================================================
-SECTION 1 - PENGAMBILAN DATA DAN NORMALISASI KE IDR
+SECTION 1 - DATA FETCH AND NORMALISATION TO IDR
 =============================================================================
-TUJUAN  : Mengambil tiga laporan keuangan tahunan, harga, dan metadata dari
-          yfinance, lalu MENYERAGAMKAN SELURUH ANGKA KE RUPIAH.
+PURPOSE : Fetch the three annual financial statements, price, and metadata
+          from yfinance, then STANDARDISE EVERY FIGURE TO RUPIAH.
 
-          Ini section paling kritikal. Sejumlah emiten IDX (tambang, energi)
-          melaporkan laporan keuangan dalam USD sementara harga sahamnya
-          dalam IDR. Kalau tidak dikonversi, equity value per share akan
-          salah ribuan kali lipat.
+          This is the most critical section. A number of IDX issuers
+          (mining, energy) report financial statements in USD while their
+          share price is quoted in IDR. Without conversion, equity value
+          per share would be wrong by orders of magnitude.
 
-RUMUS   : Normalisasi ticker : "BBCA" -> "BBCA.JK"
-          Deteksi mata uang  : info["financialCurrency"] vs info["currency"]
-          Konversi           : Nilai_IDR = Nilai_USD x Kurs USDIDR
-          Kurs               : yfinance ticker "IDR=X" (USD/IDR)
+FORMULA : Ticker normalisation : "BBCA" -> "BBCA.JK"
+          Currency detection   : info["financialCurrency"] vs info["currency"]
+          Conversion           : IDR_value = USD_value x USDIDR rate
+          FX rate               : yfinance ticker "IDR=X" (USD/IDR)
 
-          Item yang dikonversi : SELURUH baris income statement,
-                                 balance sheet, dan cash flow.
-          Item yang TIDAK dikonversi : harga saham dan market cap
-                                       (sudah dalam IDR dari bursa).
+          Items converted     : EVERY line of the income statement,
+                                 balance sheet, and cash flow.
+          Items NOT converted : share price and market cap
+                                 (already in IDR from the exchange).
 
-OUTPUT  : Object CompanyData berisi
+OUTPUT  : A CompanyData object containing
             .ticker, .name, .sector, .industry
-            .income, .balance, .cashflow   (DataFrame, sudah IDR, urut kronologis)
+            .income, .balance, .cashflow   (DataFrame, already IDR, chronological)
             .price, .market_cap, .shares_outstanding, .trailing_pe
             .fx_rate, .original_currency
             .flags (FlagLog)
@@ -38,11 +38,11 @@ from utils import FlagLog
 
 
 # -----------------------------------------------------------------------
-# 1.1 NORMALISASI TICKER
+# 1.1 TICKER NORMALISATION
 # -----------------------------------------------------------------------
 def normalize_ticker(raw):
     """
-    Ubah input pengguna jadi format yfinance IDX.
+    Turn user input into yfinance's IDX format.
       "bbca"    -> "BBCA.JK"
       "BBCA "   -> "BBCA.JK"
       "BBCA.JK" -> "BBCA.JK"
@@ -50,23 +50,23 @@ def normalize_ticker(raw):
     """
     t = str(raw).strip().upper().replace(" ", "")
     if not t:
-        raise ValueError("Ticker kosong")
+        raise ValueError("Ticker is empty")
     if t.endswith(".JK"):
         return t
-    if "." in t:                       # ticker non-IDX, biarkan apa adanya
+    if "." in t:                       # non-IDX ticker, leave it as is
         return t
     return f"{t}.JK"
 
 
 # -----------------------------------------------------------------------
-# 1.2 KURS USDIDR
+# 1.2 USDIDR RATE
 # -----------------------------------------------------------------------
 _FX_CACHE = {}
 
 def get_usdidr(flags=None):
     """
-    Ambil kurs USD/IDR terakhir dari yfinance ticker "IDR=X".
-    Kalau gagal, pakai FALLBACK_USDIDR dan beri flag keras.
+    Fetch the latest USD/IDR rate from the yfinance ticker "IDR=X".
+    On failure, use FALLBACK_USDIDR and raise a hard flag.
     """
     if "USDIDR" in _FX_CACHE:
         return _FX_CACHE["USDIDR"]
@@ -83,15 +83,15 @@ def get_usdidr(flags=None):
         if flags is not None:
             flags.warn(
                 "FX USDIDR",
-                f"Gagal ambil kurs live. Memakai fallback {rate:,.0f}. "
-                "WAJIB diverifikasi manual sebelum angka dipakai."
+                f"Could not fetch a live rate. Using fallback {rate:,.0f}. "
+                "Must be verified manually before use."
             )
     _FX_CACHE["USDIDR"] = rate
     return rate
 
 
 # -----------------------------------------------------------------------
-# 1.3 WADAH DATA
+# 1.3 DATA CONTAINER
 # -----------------------------------------------------------------------
 class CompanyData:
     def __init__(self, ticker):
@@ -114,13 +114,13 @@ class CompanyData:
 
 
 # -----------------------------------------------------------------------
-# 1.4 FUNGSI UTAMA
+# 1.4 MAIN FUNCTION
 # -----------------------------------------------------------------------
 def fetch_company(raw_ticker):
     """
-    Ambil seluruh data satu emiten dan kembalikan dalam IDR.
-    Tidak pernah melempar exception ke pemanggil. Kegagalan dicatat di
-    .fetch_ok dan .fetch_error supaya batch screening tidak berhenti.
+    Fetch all data for one issuer and return it in IDR.
+    Never raises an exception to the caller. Failures are recorded in
+    .fetch_ok and .fetch_error so batch screening doesn't stop.
     """
     ticker = normalize_ticker(raw_ticker)
     data = CompanyData(ticker)
@@ -141,7 +141,7 @@ def fetch_company(raw_ticker):
         data.shares_outstanding = _num(info.get("sharesOutstanding"))
         data.trailing_pe = _num(info.get("trailingPE"))
 
-        # --- harga terakhir ---
+        # --- latest price ---
         data.price = _num(info.get("currentPrice"))
         if not np.isfinite(data.price):
             try:
@@ -151,17 +151,17 @@ def fetch_company(raw_ticker):
             except Exception:
                 pass
 
-        # --- laporan keuangan tahunan ---
+        # --- annual financial statements ---
         income = _clean_statement(tk.income_stmt)
         balance = _clean_statement(tk.balance_sheet)
         cashflow = _clean_statement(tk.cashflow)
 
         if income is None or balance is None or cashflow is None:
-            data.fetch_error = "Salah satu laporan keuangan tahunan tidak tersedia"
-            data.flags.missing("Laporan keuangan", data.fetch_error)
+            data.fetch_error = "One or more annual financial statements are unavailable"
+            data.flags.missing("Financial statements", data.fetch_error)
             return data
 
-        # --- konversi mata uang ---
+        # --- currency conversion ---
         fin_ccy = (info.get("financialCurrency") or "IDR").upper()
         mkt_ccy = (info.get("currency") or "IDR").upper()
         data.original_currency = fin_ccy
@@ -169,9 +169,9 @@ def fetch_company(raw_ticker):
         if fin_ccy != "IDR":
             if fin_ccy != "USD":
                 data.flags.warn(
-                    "Mata uang laporan",
-                    f"Laporan dalam {fin_ccy}, konverter hanya mendukung USD. "
-                    "Angka TIDAK dikonversi, hasil valuasi tidak valid."
+                    "Reporting currency",
+                    f"Filings are in {fin_ccy}; the converter only supports USD. "
+                    "Figures were NOT converted, so the valuation is not valid."
                 )
             else:
                 fx = get_usdidr(data.flags)
@@ -180,40 +180,40 @@ def fetch_company(raw_ticker):
                 balance = balance * fx
                 cashflow = cashflow * fx
                 data.flags.warn(
-                    "Mata uang laporan",
-                    f"Laporan asli USD, dikonversi ke IDR dengan kurs {fx:,.0f}. "
-                    "Kurs spot dipakai untuk seluruh periode historis "
-                    "(penyederhanaan, bukan kurs rata-rata per tahun)."
+                    "Reporting currency",
+                    f"Filings are in USD, converted to IDR at {fx:,.0f}. A single "
+                    "spot rate is applied across all historical periods "
+                    "(a simplification, not a per-year average rate)."
                 )
         if mkt_ccy != "IDR":
             data.flags.warn(
-                "Mata uang harga",
-                f"Harga dalam {mkt_ccy}, bukan IDR. Periksa ticker."
+                "Price currency",
+                f"Price is quoted in {mkt_ccy}, not IDR. Check the ticker."
             )
 
         data.income = income
         data.balance = balance
         data.cashflow = cashflow
 
-        # --- fallback shares outstanding dari neraca ---
+        # --- shares outstanding fallback from the balance sheet ---
         if not np.isfinite(data.shares_outstanding):
             for lbl in ["Ordinary Shares Number", "Share Issued", "Common Stock Shares Outstanding"]:
                 if lbl in balance.index:
                     v = pd.to_numeric(balance.loc[lbl], errors="coerce").dropna()
                     if len(v):
-                        # dibagi fx karena tadi seluruh neraca dikali fx
+                        # divided by fx since the whole balance sheet was multiplied by fx above
                         data.shares_outstanding = float(v.iloc[-1]) / data.fx_rate
                         data.flags.warn(
                             "Shares outstanding",
-                            f"Diambil dari neraca ({lbl}), bukan dari info yfinance."
+                            f"Taken from the balance sheet ({lbl}), not from yfinance info."
                         )
                         break
 
-        # --- fallback market cap ---
+        # --- market cap fallback ---
         if not np.isfinite(data.market_cap) and np.isfinite(data.price) \
            and np.isfinite(data.shares_outstanding):
             data.market_cap = data.price * data.shares_outstanding
-            data.flags.warn("Market cap", "Dihitung dari harga x shares outstanding.")
+            data.flags.warn("Market cap", "Computed as price x shares outstanding.")
 
         data.fetch_ok = True
         return data
@@ -225,7 +225,7 @@ def fetch_company(raw_ticker):
 
 
 # -----------------------------------------------------------------------
-# 1.5 HELPER INTERNAL
+# 1.5 INTERNAL HELPERS
 # -----------------------------------------------------------------------
 def _num(v):
     try:
@@ -237,10 +237,10 @@ def _num(v):
 
 def _clean_statement(df):
     """
-    Rapikan DataFrame laporan keuangan yfinance:
-      - buang kolom yang seluruhnya NaN
-      - urutkan kolom dari periode terlama ke terbaru
-      - paksa numerik
+    Tidy up a yfinance financial statement DataFrame:
+      - drop columns that are entirely NaN
+      - sort columns from oldest to newest period
+      - force numeric
     """
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return None
@@ -250,7 +250,7 @@ def _clean_statement(df):
     if out.empty:
         return None
     try:
-        out = out[sorted(out.columns)]      # terlama -> terbaru
+        out = out[sorted(out.columns)]      # oldest -> newest
     except Exception:
         out = out.iloc[:, ::-1]
     return out

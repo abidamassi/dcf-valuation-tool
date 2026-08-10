@@ -2,27 +2,28 @@
 =============================================================================
 SECTION 11 - SENSITIVITY ANALYSIS
 =============================================================================
-TUJUAN  : Menunjukkan seberapa rapuh fair value terhadap dua variabel yang
-          paling menentukan, yaitu WACC dan terminal growth. Satu angka fair
-          value tunggal memberi kesan presisi yang menyesatkan. Grid ini
-          memperlihatkan rentang yang sebenarnya.
+PURPOSE : Show how fragile fair value is against the two most decisive
+          variables, WACC and terminal growth. A single fair value number
+          gives a misleading impression of precision. This grid shows the
+          actual range.
 
-RUMUS   : Untuk setiap kombinasi (WACC_i, g_j)
-            1. Hitung ulang Terminal Value  = FCFF_N x (1+g_j) / (WACC_i - g_j)
-            2. Diskontokan ulang seluruh arus kas dengan WACC_i
-            3. Bangun ulang bridge ke Equity Value
-            4. Bagi dengan shares outstanding
+FORMULA : For every combination (WACC_i, g_j)
+            1. Recompute Terminal Value  = FCFF_N x (1+g_j) / (WACC_i - g_j)
+            2. Re-discount every cash flow at WACC_i
+            3. Rebuild the bridge to Equity Value
+            4. Divide by shares outstanding
 
-          Perhatikan bahwa proyeksi FCFF TIDAK berubah antar sel. Yang
-          berubah hanya tingkat diskonto dan terminal growth. Ini disengaja:
-          sensitivity mengisolasi pengaruh cost of capital, terpisah dari
-          pengaruh asumsi operasional yang ditangani Section 12 (skenario).
+          Note that the FCFF projection does NOT change between cells. Only
+          the discount rate and terminal growth change. This is deliberate:
+          sensitivity isolates the effect of the cost of capital, separate
+          from the effect of operational assumptions handled by Section 12
+          (scenarios).
 
-          Grid default: 5 x 5
-            WACC             : base -100bps sampai +100bps, langkah 50bps
-            Terminal growth  : base -50bps sampai +50bps, langkah 25bps
+          Default grid: 5 x 5
+            WACC             : base -100bps to +100bps, 50bps steps
+            Terminal growth  : base -50bps to +50bps, 25bps steps
 
-OUTPUT  : DataFrame fair value per saham, DataFrame upside, dan tabel rating.
+OUTPUT  : a fair-value-per-share DataFrame, an upside DataFrame, and a rating table.
 =============================================================================
 """
 
@@ -36,7 +37,7 @@ from s09_valuation import discount_and_value
 
 def sensitivity_grid(proj, wacc_base, g_base, snapshot, data, flags):
     """
-    Bangun grid sensitivity WACC x terminal growth.
+    Build the WACC x terminal growth sensitivity grid.
     """
     A = ASSUMPTIONS
     steps = A["sens_steps"]
@@ -54,7 +55,7 @@ def sensitivity_grid(proj, wacc_base, g_base, snapshot, data, flags):
     fcff_final = float(proj["FCFF"].iloc[-1])
     ebitda_final = float(proj["EBIT"].iloc[-1] + proj["D&A"].iloc[-1])
 
-    # flags=None supaya grid tidak membanjiri log dengan peringatan berulang
+    # flags=None so the grid doesn't flood the log with repeated warnings
     for w in wacc_axis:
         for g in g_axis:
             tv = terminal_value(fcff_final, ebitda_final, w, terminal_g=g, flags=None)
@@ -70,7 +71,7 @@ def sensitivity_grid(proj, wacc_base, g_base, snapshot, data, flags):
     fv_grid.index.name = "WACC \\ Terminal g"
     up_grid.index.name = "WACC \\ Terminal g"
 
-    # Statistik ringkas rentang
+    # Summary range statistics
     flat = fv_grid.values.astype(float).ravel()
     flat = flat[np.isfinite(flat)]
     stats = {
@@ -88,7 +89,7 @@ def sensitivity_grid(proj, wacc_base, g_base, snapshot, data, flags):
 
 
 class _NullFlags:
-    """Penampung flag kosong agar grid tidak mencatat peringatan berulang."""
+    """An empty flag sink so the grid doesn't log repeated warnings."""
     def warn(self, *a, **k): pass
     def missing(self, *a, **k): pass
     def zero(self, *a, **k): pass

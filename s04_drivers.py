@@ -1,28 +1,28 @@
 """
 =============================================================================
-SECTION 4 - DRIVER HISTORIS (MOVING AVERAGE)
+SECTION 4 - HISTORICAL DRIVERS (MOVING AVERAGE)
 =============================================================================
-TUJUAN  : Menurunkan asumsi proyeksi dari data historis emiten itu sendiri,
-          bukan dari tebakan. Semua driver memakai rata-rata bergerak
-          sederhana atas seluruh periode yang tersedia. Ini pilihan sadar
-          untuk konservatif: emiten yang kebetulan tumbuh 60% dua tahun
-          terakhir tidak boleh langsung diekstrapolasi selamanya.
+PURPOSE : Derive projection assumptions from the issuer's own historical
+          data, not from guesswork. Every driver uses a simple moving
+          average over all available periods. This is a deliberate
+          conservative choice: an issuer that happened to grow 60% over the
+          last two years should not be extrapolated forever.
 
-RUMUS   : Revenue growth   g_hist = mean(pct_change(Revenue))
+FORMULA : Revenue growth   g_hist = mean(pct_change(Revenue))
           EBIT margin      m_hist = mean(EBIT_t / Revenue_t)
           D&A ratio        d_hist = mean(D&A_t / Revenue_t)
           Capex ratio      c_hist = mean(Capex_t / Revenue_t)
           NWC ratio        w_hist = mean(NWC_t / Revenue_t)
           Effective tax    t_hist = mean(Tax Provision_t / Pretax Income_t)
 
-          Seluruh hasil di-clip ke rentang wajar di config.py. Setiap
-          clipping dicatat sebagai flag supaya terlihat bahwa angka yang
-          dipakai bukan hasil mentah.
+          Every result is clipped to a reasonable range in config.py. Each
+          clip is logged as a flag so it's visible that the value in use
+          isn't the raw result.
 
-          Standar deviasi tiap driver juga dihitung di sini karena akan
-          dipakai Section 12 untuk membentuk skenario Bull dan Bear.
+          Each driver's standard deviation is also computed here, since it
+          will be used by Section 12 to build the Bull and Bear scenarios.
 
-OUTPUT  : dict driver berisi nilai base dan standar deviasinya.
+OUTPUT  : a driver dict containing base values and their standard deviations.
 =============================================================================
 """
 
@@ -35,111 +35,112 @@ from utils import nanmean, nanstd, clip_flag
 
 def build_drivers(hist, flags):
     """
-    Hitung driver base dan standar deviasinya dari seluruh periode historis.
+    Compute base drivers and their standard deviations from the entire
+    historical period.
     """
     A = ASSUMPTIONS
 
     def series(key):
         return pd.to_numeric(hist.loc[key], errors="coerce").dropna().tolist()
 
-    # ---------------- 4.1 Pertumbuhan revenue ----------------
-    # MEDIAN, bukan mean. Jendela 4 tahun (2022-2025) masih menyerap rebound
-    # pasca pandemi, dan satu tahun ekstrem menarik mean naik tajam. MAPA
-    # keluar 25.76% dengan mean, jauh di atas realisasi FY25 (+12.2%).
+    # ---------------- 4.1 Revenue growth ----------------
+    # MEDIAN, not mean. The 4-year window (2022-2025) still absorbs the
+    # post-pandemic rebound, and one extreme year pulls the mean up sharply.
+    # MAPA came out at 25.76% with the mean, far above the FY25 actual (+12.2%).
     g_list = series("rev_growth")
     g_raw = float(np.median(g_list)) if len(g_list) else np.nan
     g_sd = nanstd(g_list)
     if not np.isfinite(g_raw):
         g_raw = 0.0
-        flags.warn("Revenue growth", "Tidak bisa dihitung, dipakai 0%.")
+        flags.warn("Revenue growth", "Could not be computed, used 0% instead.")
     g_hist = clip_flag(g_raw, A["rev_growth_floor"], A["rev_growth_cap"],
                        "Revenue growth (median)", flags)
     if not np.isfinite(g_sd):
         g_sd = 0.03
-        flags.warn("Revenue growth SD", "Tidak bisa dihitung, dipakai 3%.")
+        flags.warn("Revenue growth SD", "Could not be computed, used 3% instead.")
     elif g_sd < A["min_growth_sd"]:
         flags.warn("Revenue growth SD",
-                   f"Volatilitas historis hanya {g_sd*100:.2f}%, terlalu rendah "
-                   f"untuk membentuk skenario yang bermakna. Dipakai lantai "
-                   f"{A['min_growth_sd']*100:.1f}%.")
+                   f"Historical volatility is only {g_sd*100:.2f}%, too low to "
+                   f"form a meaningful scenario spread. Floor of "
+                   f"{A['min_growth_sd']*100:.1f}% used instead.")
         g_sd = A["min_growth_sd"]
 
-    # ---------------- 4.2 Margin EBIT ----------------
+    # ---------------- 4.2 EBIT margin ----------------
     m_list = series("ebit_margin")
     m_base = float(np.median(m_list)) if len(m_list) else np.nan
     m_sd = nanstd(m_list)
     if not np.isfinite(m_base) or m_base <= 0:
-        flags.warn("EBIT margin", "Rata-rata historis tidak positif. "
-                                  "Model tidak akan menghasilkan nilai wajar.")
+        flags.warn("EBIT margin", "Historical average is not positive. "
+                                  "The model will not produce a meaningful fair value.")
         m_base = max(m_base if np.isfinite(m_base) else 0.01, 0.01)
     if not np.isfinite(m_sd):
         m_sd = 0.02
-        flags.warn("EBIT margin SD", "Tidak bisa dihitung, dipakai 200bps.")
+        flags.warn("EBIT margin SD", "Could not be computed, used 200bps instead.")
     elif m_sd < A["min_margin_sd"]:
         flags.warn("EBIT margin SD",
-                   f"Volatilitas historis hanya {m_sd*100:.2f}%, terlalu rendah "
-                   f"untuk membentuk skenario yang bermakna. Dipakai lantai "
-                   f"{A['min_margin_sd']*100:.1f}%.")
+                   f"Historical volatility is only {m_sd*100:.2f}%, too low to "
+                   f"form a meaningful scenario spread. Floor of "
+                   f"{A['min_margin_sd']*100:.1f}% used instead.")
         m_sd = A["min_margin_sd"]
 
-    # ---------------- 4.3 Depresiasi dan amortisasi ----------------
+    # ---------------- 4.3 Depreciation and amortisation ----------------
     d_list = series("da_ratio")
     d_base = float(np.median(d_list)) if len(d_list) else np.nan
     if not np.isfinite(d_base) or d_base < 0:
         d_base = 0.0
-        flags.warn("D&A ratio", "Tidak tersedia, dipakai 0% dari revenue. "
-                                "FCFF akan understate.")
+        flags.warn("D&A ratio", "Not available, used 0% of revenue instead. "
+                                "FCFF will be understated.")
 
     # ---------------- 4.4 Capex ----------------
     c_list = series("capex_ratio")
     c_raw = float(np.median(c_list)) if len(c_list) else np.nan
     if not np.isfinite(c_raw) or c_raw < 0:
         c_raw = d_base
-        flags.warn("Capex ratio", "Tidak tersedia. Diproksi sama dengan D&A ratio "
-                                  "(asumsi maintenance capex).")
+        flags.warn("Capex ratio", "Not available. Proxied as equal to the D&A ratio "
+                                  "(maintenance capex assumption).")
     c_base = clip_flag(c_raw, 0.0, A["capex_ratio_cap"], "Capex ratio (MA)", flags)
 
-    # ---------------- 4.5 Modal kerja ----------------
+    # ---------------- 4.5 Working capital ----------------
     w_list = series("nwc_ratio")
     w_raw = float(np.median(w_list)) if len(w_list) else np.nan
     if not np.isfinite(w_raw):
         w_raw = 0.0
-        flags.warn("NWC ratio", "Tidak tersedia, dipakai 0%. "
-                                "Delta working capital tidak dimodelkan.")
+        flags.warn("NWC ratio", "Not available, used 0% instead. "
+                                "Delta working capital will not be modelled.")
     w_base = clip_flag(w_raw, A["nwc_ratio_floor"], A["nwc_ratio_cap"],
                        "NWC ratio (MA)", flags)
 
-    # ---------------- 4.6 Tarif pajak efektif ----------------
+    # ---------------- 4.6 Effective tax rate ----------------
     t_list = [t for t in series("eff_tax") if 0 < t < 1]
     t_raw = float(np.median(t_list)) if len(t_list) else np.nan
     if not np.isfinite(t_raw):
         t_base = A["tax_fallback"]
         flags.warn("Effective tax rate",
-                   f"Tidak bisa dihitung dari Tax Provision / Pretax Income. "
-                   f"Dipakai tarif statutori {t_base*100:.0f}%.")
+                   f"Could not be computed from Tax Provision / Pretax Income. "
+                   f"Used the statutory rate of {t_base*100:.0f}% instead.")
     else:
         t_base = clip_flag(t_raw, A["tax_floor"], A["tax_cap"],
                            "Effective tax rate", flags)
 
     # -------------------------------------------------------------------
-    # 4.7 PEMBATAS GROWTH BERBASIS REINVESTASI FUNDAMENTAL
+    # 4.7 FUNDAMENTAL REINVESTMENT-BASED GROWTH CAP
     # -------------------------------------------------------------------
-    # Persamaan pertumbuhan fundamental:
+    # Fundamental growth identity:
     #     g_sustainable = Reinvestment Rate x ROIC
     #
-    # Perusahaan tidak bisa tumbuh melebihi apa yang dibiayai reinvestasinya.
-    # Sebelum perbaikan ini, model memaksa MAPA tumbuh 25% sambil hanya
-    # menyisihkan 20.6% NOPAT untuk reinvestasi. Untuk tumbuh 25% dengan ROIC
-    # 30.5%, reinvestment rate harus 82%. Selisihnya jatuh ke FCFF sebagai kas
-    # yang tidak pernah ada, dan itulah sumber utama upside 137%.
+    # A company cannot grow beyond what its reinvestment can fund. Before
+    # this fix, the model forced MAPA to grow at 25% while only setting
+    # aside 20.6% of NOPAT for reinvestment. To grow 25% with a 30.5% ROIC,
+    # the reinvestment rate would need to be 82%. The gap fell into FCFF as
+    # cash that never existed, and that was the main source of the 137% upside.
     #
-    # Komponen historis:
-    #     NOPAT_t        = EBIT_t x (1 - tarif pajak efektif)
+    # Historical components:
+    #     NOPAT_t        = EBIT_t x (1 - effective tax rate)
     #     Reinvestment_t = Capex_t - D&A_t + delta NWC_t
     #     RR_t           = Reinvestment_t / NOPAT_t
     #     ROIC_t         = NOPAT_t / Invested Capital_t-1
     #
-    # g yang dipakai = min(g historis median, g sustainable)
+    # g used = min(median historical g, sustainable g)
     ebit_h = pd.to_numeric(hist.loc["ebit"], errors="coerce")
     capex_h = pd.to_numeric(hist.loc["capex"], errors="coerce")
     da_h = pd.to_numeric(hist.loc["dep_amort"], errors="coerce")
@@ -168,11 +169,11 @@ def build_drivers(hist, flags):
         g_sust = max(rr_hist * roic_hist, 0.0)
         if g_sust < g_hist:
             flags.warn(
-                "Growth dibatasi reinvestasi",
-                f"Growth historis median {g_hist*100:.2f}% MELEBIHI growth yang "
-                f"bisa dibiayai reinvestasi. RR historis {rr_hist*100:.1f}% x "
-                f"ROIC {roic_hist*100:.1f}% = {g_sust*100:.2f}%. Growth diturunkan "
-                f"ke {g_sust*100:.2f}% agar konsisten secara ekonomi."
+                "Growth capped by reinvestment",
+                f"Median historical growth of {g_hist*100:.2f}% EXCEEDS what "
+                f"reinvestment can fund. Historical RR {rr_hist*100:.1f}% x "
+                f"ROIC {roic_hist*100:.1f}% = {g_sust*100:.2f}%. Growth lowered "
+                f"to {g_sust*100:.2f}% to stay economically consistent."
             )
             g_base = g_sust
         else:
@@ -181,30 +182,33 @@ def build_drivers(hist, flags):
         g_base = g_hist
         rr_hist = np.nan
         roic_hist = np.nan
-        flags.warn("Growth dibatasi reinvestasi",
-                   "RR atau ROIC historis tidak dapat dihitung. Growth memakai "
-                   "median historis tanpa pembatas fundamental.")
+        flags.warn("Growth capped by reinvestment",
+                   "Historical RR or ROIC could not be computed. Growth uses the "
+                   "historical median with no fundamental cap applied.")
 
     # -------------------------------------------------------------------
-    # 4.8 MARGIN TARGET DAN DETEKSI OPERATING LEVERAGE
+    # 4.8 MARGIN TARGET AND OPERATING LEVERAGE DETECTION
     # -------------------------------------------------------------------
-    # Margin EBIT tidak lagi konstan sepanjang proyeksi. Kalau ada bukti
-    # operating leverage, margin di-fade linear dari base menuju margin
-    # TERTINGGI yang pernah dicapai emiten, tercapai di tahun terakhir.
+    # EBIT margin is no longer constant across the projection. If there's
+    # evidence of operating leverage, margin fades linearly from the base
+    # toward the HIGHEST margin the issuer has ever achieved, reached in
+    # the final year.
     #
-    # Bukti operating leverage diuji lewat korelasi Pearson antara revenue
-    # dan EBIT margin historis. Logikanya: kalau basis biaya tetap relatif
-    # stabil sementara revenue naik, biaya tetap ter-dilusi dan margin
-    # mengembang. Pola itu akan muncul sebagai korelasi positif.
+    # Evidence of operating leverage is tested via the Pearson correlation
+    # between historical revenue and EBIT margin. The logic: if the fixed
+    # cost base stays relatively stable while revenue rises, fixed costs get
+    # diluted and margin expands. That pattern shows up as a positive correlation.
     #
-    # Aktivasi BERSYARAT. Tanpa bukti korelasi positif, margin tetap flat.
-    # Ini mencegah margin expansion dipaksakan pada emiten yang justru
-    # marginnya menyusut saat revenue naik, misalnya karena perang harga
-    # atau kenaikan biaya bahan baku yang tidak bisa diteruskan ke konsumen.
+    # Activation is CONDITIONAL. Without evidence of positive correlation,
+    # margin stays flat. This prevents margin expansion from being forced
+    # onto an issuer whose margin actually shrinks as revenue rises, for
+    # example because of a price war or input cost increases that can't be
+    # passed on to consumers.
     #
-    # PERINGATAN STATISTIK: dengan hanya 4 periode tahunan, korelasi ini
-    # dihitung dari 4 titik data. Itu jumlah yang sangat sedikit dan hasilnya
-    # rapuh. Ambang 0.50 dipakai sebagai penyaring kasar, bukan uji signifikan.
+    # STATISTICAL CAVEAT: with only 4 annual periods, this correlation is
+    # computed from 4 data points. That is a very small sample and the
+    # result is fragile. The 0.50 threshold is used as a rough filter, not
+    # a significance test.
     m_target = m_base
     oplev_corr = np.nan
     oplev_detected = False
@@ -222,21 +226,21 @@ def build_drivers(hist, flags):
                 m_target = min(max(m_max, m_base), A["margin_target_cap"])
                 oplev_detected = True
                 flags.warn(
-                    "Margin expansion AKTIF",
-                    f"Korelasi revenue vs EBIT margin = {oplev_corr:.2f} "
-                    f"(ambang {A['margin_oplev_min_corr']:.2f}), terdeteksi "
-                    f"operating leverage. Margin di-fade linear dari "
-                    f"{m_base*100:.2f}% menuju margin tertinggi historis "
-                    f"{m_target*100:.2f}% pada tahun terakhir proyeksi. "
-                    f"Basis korelasi hanya {len(pair)} titik data, rapuh secara "
-                    f"statistik."
+                    "Margin expansion ACTIVE",
+                    f"Revenue vs EBIT margin correlation = {oplev_corr:.2f} "
+                    f"(threshold {A['margin_oplev_min_corr']:.2f}), operating "
+                    f"leverage detected. Margin fades linearly from "
+                    f"{m_base*100:.2f}% to the historical high of "
+                    f"{m_target*100:.2f}% by the final projection year. "
+                    f"The correlation rests on only {len(pair)} data points, "
+                    f"which is statistically fragile."
                 )
             else:
                 flags.warn(
-                    "Margin expansion TIDAK AKTIF",
-                    f"Korelasi revenue vs EBIT margin = {oplev_corr:.2f}, di bawah "
-                    f"ambang {A['margin_oplev_min_corr']:.2f}. Tidak ada bukti "
-                    f"operating leverage. Margin ditahan konstan di "
+                    "Margin expansion NOT ACTIVE",
+                    f"Revenue vs EBIT margin correlation = {oplev_corr:.2f}, below "
+                    f"the {A['margin_oplev_min_corr']:.2f} threshold. No evidence "
+                    f"of operating leverage. Margin held flat at "
                     f"{m_base*100:.2f}%."
                 )
 
@@ -261,23 +265,18 @@ def build_drivers(hist, flags):
 
 
 def drivers_table(drv):
-    """Tabel driver untuk ditampilkan ke pengguna."""
+    """Driver table for display to the user."""
     rows = [
-        ("Revenue growth historis (median)", f"{drv.get('rev_growth_hist', np.nan)*100:.2f}%",
-         f"SD {drv['rev_growth_sd']*100:.2f}%"),
-        ("Reinvestment rate historis", f"{drv.get('rr_hist', np.nan)*100:.1f}%", ""),
-        ("ROIC historis", f"{drv.get('roic_hist', np.nan)*100:.1f}%", ""),
-        ("Revenue growth DIPAKAI", f"{drv['rev_growth']*100:.2f}%",
-         "min(historis, RR x ROIC)"),
-        ("EBIT margin base (median)", f"{drv['ebit_margin']*100:.2f}%",
-         f"SD {drv['ebit_margin_sd']*100:.2f}%"),
-        ("EBIT margin target (tahun N)", f"{drv.get('ebit_margin_target', np.nan)*100:.2f}%",
-         "aktif" if drv.get("oplev_detected") else "tidak aktif, margin flat"),
-        ("Korelasi revenue vs margin", f"{drv.get('oplev_corr', np.nan):.2f}",
-         "uji operating leverage"),
-        ("D&A / Revenue (MA)", f"{drv['da_ratio']*100:.2f}%", ""),
-        ("Capex / Revenue (MA)", f"{drv['capex_ratio']*100:.2f}%", ""),
-        ("NWC / Revenue (MA)", f"{drv['nwc_ratio']*100:.2f}%", ""),
-        ("Effective tax rate", f"{drv['tax_rate']*100:.2f}%", ""),
+        ("Historical revenue growth (median)", f"{drv.get('rev_growth_hist', np.nan)*100:.2f}%"),
+        ("Historical reinvestment rate", f"{drv.get('rr_hist', np.nan)*100:.1f}%"),
+        ("Historical ROIC", f"{drv.get('roic_hist', np.nan)*100:.1f}%"),
+        ("Revenue growth used", f"{drv['rev_growth']*100:.2f}%"),
+        ("EBIT margin base (median)", f"{drv['ebit_margin']*100:.2f}%"),
+        ("EBIT margin target (year N)", f"{drv.get('ebit_margin_target', np.nan)*100:.2f}%"),
+        ("Revenue vs margin correlation", f"{drv.get('oplev_corr', np.nan):.2f}"),
+        ("D&A / Revenue (MA)", f"{drv['da_ratio']*100:.2f}%"),
+        ("Capex / Revenue (MA)", f"{drv['capex_ratio']*100:.2f}%"),
+        ("NWC / Revenue (MA)", f"{drv['nwc_ratio']*100:.2f}%"),
+        ("Effective tax rate", f"{drv['tax_rate']*100:.2f}%"),
     ]
-    return pd.DataFrame(rows, columns=["Driver", "Base", "Dispersi"])
+    return pd.DataFrame(rows, columns=["Driver", "Value"])

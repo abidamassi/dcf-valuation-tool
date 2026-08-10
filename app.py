@@ -25,7 +25,7 @@ warnings.filterwarnings("ignore")
 
 from config import ASSUMPTIONS, SCREENING, DISCLAIMER
 from theme import (COLORS, RATING_COLOR, FLAG_COLOR,
-                   inject_css, pill, metric_strip, callout)
+                   inject_css, pill, metric_strip, callout, styled_table)
 from charts import (chart_projection, chart_waterfall,
                     chart_sensitivity, chart_scenarios)
 from main import fetch_bundle, analyze_ticker
@@ -67,13 +67,6 @@ def run_analysis(ticker, rf, erp, years, g_term):
 # Streamlit is deprecating use_container_width in favour of width="stretch".
 # These wrappers try the new argument first and fall back to the old one, so
 # the app runs on both current and older Streamlit builds on Community Cloud.
-def show_df(df, hide_index=False):
-    try:
-        return st.dataframe(df, width="stretch", hide_index=hide_index)
-    except TypeError:
-        return st.dataframe(df, use_container_width=True, hide_index=hide_index)
-
-
 def show_chart(fig):
     cfg = {"displayModeBar": False}
     try:
@@ -116,14 +109,14 @@ with st.sidebar:
         f'<div style="font-size:1.05rem;font-weight:600;color:#fff;letter-spacing:-.01em;">'
         f'DCF Valuation Engine</div>'
         f'<div style="font-size:.7rem;color:{COLORS["ice"]};letter-spacing:.1em;'
-        f'text-transform:uppercase;margin-top:.15rem;">FCFF and WACC, IDX equities</div>'
+        f'text-transform:uppercase;margin-top:.15rem;">Intrinsic Valuation</div>'
         f'</div>', unsafe_allow_html=True)
 
     st.markdown("---")
 
-    ticker_in = st.text_input("Ticker", value="MAPA", max_chars=12,
+    ticker_in = st.text_input("Ticker", value="SIDO", max_chars=12,
                               help="Enter the IDX code only. The .JK suffix is added "
-                                   "automatically, so MAPA becomes MAPA.JK.")
+                                   "automatically, so SIDO becomes SIDO.JK.")
 
     st.markdown("---")
     st.markdown(
@@ -155,7 +148,10 @@ with st.sidebar:
                        format="%d years")
 
     st.markdown("---")
-    run = st.button("Run analysis")
+    try:
+        run = st.button("Run analysis", width="stretch")
+    except TypeError:
+        run = st.button("Run analysis", use_container_width=True)
 
     st.markdown(
         f'<div style="font-size:.66rem;color:{COLORS["ice"]};line-height:1.55;'
@@ -214,117 +210,39 @@ d = r["data"]
 scr = r["screening"]
 
 # =====================================================================
-# MASTHEAD
+# MASTHEAD (straight to the company, no report eyebrow)
 # =====================================================================
 st.markdown(
-    f'<div class="masthead"><p class="eyebrow">DCF valuation report</p>'
-    f'<h1>{d.ticker} &nbsp;&middot;&nbsp; {d.name or "Unnamed"}</h1>'
+    f'<div class="masthead"><h1>{d.ticker} &nbsp;&middot;&nbsp; {d.name or "Unnamed"}</h1>'
     f'<div class="sub">{d.sector or "Sector n/a"} &nbsp;|&nbsp; '
     f'{d.industry or "Industry n/a"}</div></div>',
     unsafe_allow_html=True)
 
-metric_strip([
-    ("Market price", f_idr(d.price)),
-    ("Market cap", f_tn(d.market_cap)),
-    ("Trailing P/E", f_x(d.trailing_pe)),
-    ("Reporting currency", d.original_currency),
-    ("FX applied", f"{d.fx_rate:,.0f}" if d.fx_rate != 1.0 else "None"),
-])
-
-if d.fx_rate != 1.0:
-    callout(f"<b>Currency conversion applied.</b> Filings are reported in "
-            f"{d.original_currency} while the share price is quoted in IDR. Every "
-            f"income statement, balance sheet, and cash flow line has been "
-            f"multiplied by {d.fx_rate:,.0f}. A single spot rate is applied across "
-            f"all historical periods, which is a simplification rather than the "
-            f"average rate for each year.")
-
 
 # =====================================================================
-# SECTION 3 - SCREENING
+# SECTION 10 - VERDICT (the headline highlight, shown before anything else)
 # =====================================================================
-pill("03", "Model eligibility screening",
-     "These gates test whether FCFF and WACC can be applied to this company at "
-     "all, not whether the stock is attractive.")
+pill("01", "Valuation verdict")
 
-if isinstance(scr.get("detail"), pd.DataFrame) and not scr["detail"].empty:
-    det = scr["detail"].copy()
+if scr["passed"] and r.get("ok"):
+    val = r["valuation"]
+    rec = r["recommendation"]
+    sc_df = r["scenarios"]
 
-    def _style(row):
-        color = COLORS["buy"] if row["Status"] == "PASS" else COLORS["sell"]
-        return [f"color:{color};font-weight:600" if c == "Status" else ""
-                for c in det.columns]
+    fv = val["fair_value_per_share"]
+    px = val["market_price"]
+    rating = rec["rating"]
+    rcolor = RATING_COLOR.get(rating, COLORS["ink_muted"])
 
-    show_df(det.style.apply(_style, axis=1), hide_index=True)
+    sc_vals = [float(sc_df.loc[s, "Fair value/shr"]) for s in ["BEAR", "BULL"]
+               if s in sc_df.index and np.isfinite(sc_df.loc[s, "Fair value/shr"])]
+    lo = min(sc_vals) if sc_vals else fv
+    hi = max(sc_vals) if sc_vals else fv
+    span = max(hi - lo, 1e-9)
+    pos = float(np.clip((px - lo) / span, 0, 1)) * 100
+    fv_pos = float(np.clip((fv - lo) / span, 0, 1)) * 100
 
-if scr["passed"]:
-    st.markdown(f'<div class="callout"><b class="gate-ok">ELIGIBLE.</b> '
-                f'All gates passed. The valuation below is calculated.</div>',
-                unsafe_allow_html=True)
-else:
-    st.markdown(f'<div class="callout"><b class="gate-no">CANNOT PROCEED.</b> '
-                f'{scr["status"]}</div>', unsafe_allow_html=True)
-
-    if d.flags.has_issue:
-        pill("--", "Data quality warnings")
-        rows = "".join(
-            f'<div class="flagrow">'
-            f'<div class="flagtag" style="background:{FLAG_COLOR.get(lv, COLORS["miss"])}">{lv}</div>'
-            f'<div class="flagfield">{fd}</div><div class="flagnote">{nt}</div></div>'
-            for lv, fd, nt in d.flags.items)
-        st.markdown(f'<div class="flagbox">{rows}</div>', unsafe_allow_html=True)
-
-    render_disclaimer()
-    st.stop()
-
-
-# =====================================================================
-# DATA QUALITY
-# =====================================================================
-val = r["valuation"]
-rec = r["recommendation"]
-drv = r["drivers"]
-w = r["wacc"]
-proj = r["projection"]
-fsum = r["forecast_summary"]
-tv = r["terminal"]
-sens = r["sensitivity"]
-sc_df = r["scenarios"]
-
-pill("--", "Data quality warnings",
-     "Read these before relying on any figure below. They record where a value "
-     "was missing, derived, proxied, or clipped.")
-
-if d.flags.has_issue:
-    rows = "".join(
-        f'<div class="flagrow">'
-        f'<div class="flagtag" style="background:{FLAG_COLOR.get(lv, COLORS["miss"])}">{lv}</div>'
-        f'<div class="flagfield">{fd}</div><div class="flagnote">{nt}</div></div>'
-        for lv, fd, nt in d.flags.items)
-    st.markdown(f'<div class="flagbox">{rows}</div>', unsafe_allow_html=True)
-else:
-    callout("No data quality issues detected.")
-
-
-# =====================================================================
-# SECTION 10 - VERDICT (placed early: the answer comes first)
-# =====================================================================
-pill("10", "Valuation verdict")
-
-fv = val["fair_value_per_share"]
-px = val["market_price"]
-rating = rec["rating"]
-rcolor = RATING_COLOR.get(rating, COLORS["ink_muted"])
-
-sc_vals = [float(sc_df.loc[s, "Fair value/shr"]) for s in ["BEAR", "BULL"]
-           if s in sc_df.index and np.isfinite(sc_df.loc[s, "Fair value/shr"])]
-lo = min(sc_vals) if sc_vals else fv
-hi = max(sc_vals) if sc_vals else fv
-span = max(hi - lo, 1e-9)
-pos = float(np.clip((px - lo) / span, 0, 1)) * 100
-fv_pos = float(np.clip((fv - lo) / span, 0, 1)) * 100
-
-st.markdown(f"""
+    st.markdown(f"""
 <div class="verdict">
   <div class="row">
     <div>
@@ -358,6 +276,94 @@ st.markdown(f"""
   </div>
 </div>
 """, unsafe_allow_html=True)
+else:
+    reason = scr.get("status", "This issuer does not meet the model's eligibility criteria.")
+    if reason.startswith("CANNOT PROCEED - "):
+        reason = reason[len("CANNOT PROCEED - "):]
+    st.markdown(f"""
+<div class="verdict">
+  <div class="row">
+    <div>
+      <div class="lab">Recommendation</div>
+      <div class="rating" style="color:{COLORS['ink_muted']}">None</div>
+    </div>
+    <div style="flex:1 1 360px;">
+      <div class="lab">Reason</div>
+      <div class="reason">{reason}</div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+
+# =====================================================================
+# MARKET SNAPSHOT
+# =====================================================================
+metric_strip([
+    ("Market price", f_idr(d.price)),
+    ("Market cap", f_tn(d.market_cap)),
+    ("Trailing P/E", f_x(d.trailing_pe)),
+    ("Reporting currency", d.original_currency),
+    ("FX applied", f"{d.fx_rate:,.0f}" if d.fx_rate != 1.0 else "None"),
+])
+
+if d.fx_rate != 1.0:
+    callout(f"<b>Currency conversion applied.</b> Filings are reported in "
+            f"{d.original_currency} while the share price is quoted in IDR. Every "
+            f"income statement, balance sheet, and cash flow line has been "
+            f"multiplied by {d.fx_rate:,.0f}. A single spot rate is applied across "
+            f"all historical periods, which is a simplification rather than the "
+            f"average rate for each year.")
+
+
+# =====================================================================
+# SECTION 3 - SCREENING
+# =====================================================================
+pill("02", "Model eligibility screening",
+     "These gates test whether FCFF and WACC can be applied to this company at "
+     "all, not whether the stock is attractive.")
+
+if isinstance(scr.get("detail"), pd.DataFrame) and not scr["detail"].empty:
+    det = scr["detail"].drop(columns=["No"], errors="ignore")
+    styled_table(det, hide_index=True, status_col="Status")
+
+if scr["passed"]:
+    st.markdown(f'<div class="callout"><b class="gate-ok">ELIGIBLE.</b> '
+                f'All gates passed. The valuation below is calculated.</div>',
+                unsafe_allow_html=True)
+else:
+    status_text = scr["status"]
+    if status_text.startswith("CANNOT PROCEED - "):
+        status_text = status_text[len("CANNOT PROCEED - "):]
+    st.markdown(f'<div class="callout"><b class="gate-no">CANNOT PROCEED.</b> '
+                f'{status_text}</div>', unsafe_allow_html=True)
+    render_disclaimer()
+    st.stop()
+
+
+# =====================================================================
+# DATA QUALITY
+# =====================================================================
+drv = r["drivers"]
+w = r["wacc"]
+proj = r["projection"]
+fsum = r["forecast_summary"]
+tv = r["terminal"]
+sens = r["sensitivity"]
+
+pill("03", "Data quality warnings",
+     "Read these before relying on any figure below. They record where a value "
+     "was missing, derived, proxied, or clipped.")
+
+if d.flags.has_issue:
+    rows = "".join(
+        f'<div class="flagrow">'
+        f'<div class="flagtag" style="background:{FLAG_COLOR.get(lv, COLORS["miss"])}">{lv}</div>'
+        f'<div class="flagfield">{fd}</div><div class="flagnote">{nt}</div></div>'
+        for lv, fd, nt in d.flags.items)
+    st.markdown(f'<div class="flagbox">{rows}</div>', unsafe_allow_html=True)
+else:
+    callout("No data quality issues detected.")
 
 
 # =====================================================================
@@ -369,7 +375,7 @@ pill("04", "Historical drivers and model decisions",
 
 c1, c2 = st.columns([1.05, 1])
 with c1:
-    show_df(drivers_table(drv), hide_index=True)
+    styled_table(drivers_table(drv), hide_index=True)
 with c2:
     g_hist = drv.get("rev_growth_hist", np.nan)
     if np.isfinite(g_hist) and drv["rev_growth"] < g_hist - 1e-9:
@@ -399,11 +405,11 @@ with c2:
 # =====================================================================
 # SECTIONS 5 AND 6 - COST OF CAPITAL
 # =====================================================================
-pill("05 / 06", "Beta and cost of capital")
+pill("05", "Beta and cost of capital")
 
 c1, c2 = st.columns([1, 1])
 with c1:
-    show_df(wacc_table(w), hide_index=True)
+    styled_table(wacc_table(w), hide_index=True)
 with c2:
     metric_strip([("WACC", f_pct(w["wacc"])), ("Cost of equity", f_pct(w["ke"]))])
     st.write("")
@@ -419,12 +425,12 @@ with c2:
 # =====================================================================
 # SECTION 7 - PROJECTION
 # =====================================================================
-pill("07", "Free cash flow to firm projection",
+pill("06", "Free cash flow to firm projection",
      f"{fsum['years']} year explicit forecast. FCFF equals NOPAT plus depreciation "
      f"and amortisation, less capital expenditure and the change in working capital.")
 
 show_chart(chart_projection(proj))
-show_df(projection_table(proj))
+styled_table(projection_table(proj), hide_index=False)
 
 gap = fsum["avg_implied_growth"] - fsum["g1"]
 c1, c2, c3 = st.columns(3)
@@ -445,7 +451,7 @@ if np.isfinite(gap) and abs(gap) > 0.05:
 # =====================================================================
 # SECTION 8 - TERMINAL VALUE
 # =====================================================================
-pill("08", "Terminal value",
+pill("07", "Terminal value",
      "Gordon growth on the final year of free cash flow, cross-checked against the "
      "implied exit multiple.")
 
@@ -462,7 +468,7 @@ metric_strip([
 # =====================================================================
 # SECTION 9 - BRIDGE
 # =====================================================================
-pill("09", "Enterprise value to equity value")
+pill("08", "Enterprise value to equity value")
 
 c1, c2 = st.columns([1.25, 1])
 with c1:
@@ -470,7 +476,7 @@ with c1:
 with c2:
     bt = bridge_table(val).copy()
     bt["IDR bn"] = bt["IDR bn"].map(lambda x: f"{x:,.0f}")
-    show_df(bt, hide_index=True)
+    styled_table(bt, hide_index=True)
     metric_strip([("Terminal value share of EV", f_pct(val["tv_share_of_ev"], 1))])
     st.write("")
     metric_strip([("Shares outstanding",
@@ -487,7 +493,7 @@ if np.isfinite(val["tv_share_of_ev"]) and val["tv_share_of_ev"] > 0.80:
 # =====================================================================
 # SECTION 11 - SENSITIVITY
 # =====================================================================
-pill("11", "Sensitivity",
+pill("09", "Sensitivity",
      "Cash flows are held constant. Only the discount rate and terminal growth move, "
      "which isolates the effect of the cost of capital.")
 
@@ -505,7 +511,7 @@ metric_strip([
 # =====================================================================
 # SECTION 12 - SCENARIOS
 # =====================================================================
-pill("12", "Scenarios",
+pill("10", "Scenarios",
      "Bull and bear shift revenue growth and EBIT margin by one standard deviation "
      "of the company's own history, with terminal growth moved 50bps either way.")
 
@@ -513,13 +519,13 @@ c1, c2 = st.columns([1.15, 1])
 with c1:
     show_chart(chart_scenarios(sc_df, px))
 with c2:
-    show_df(scenario_table(sc_df))
+    styled_table(scenario_table(sc_df), hide_index=False)
 
 
 # =====================================================================
 # LIMITATIONS
 # =====================================================================
-pill("--", "Model limitations")
+pill("11", "Model limitations")
 st.markdown("""
 <div class="limits"><ul>
 <li>Corporate actions and post balance sheet events are not reflected. The most

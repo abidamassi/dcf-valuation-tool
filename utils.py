@@ -1,12 +1,12 @@
 """
 =============================================================================
-UTILS - HELPER BERSAMA
+UTILS - SHARED HELPERS
 =============================================================================
-TUJUAN  : Menyediakan fungsi pembantu yang dipakai lintas section, terutama
-          pencarian label laporan keuangan yfinance yang penamaannya tidak
-          konsisten antar emiten, dan pencatatan flag data bermasalah.
-RUMUS   : Tidak ada rumus keuangan di sini.
-OUTPUT  : Fungsi pick_row, safe_div, clip_flag, dan class FlagLog.
+PURPOSE : Provide helper functions used across sections, mainly lookup of
+          yfinance financial statement labels (which are inconsistently
+          named across issuers), and logging of problematic data flags.
+FORMULA : No financial formulas here.
+OUTPUT  : pick_row, safe_div, clip_flag functions, and the FlagLog class.
 =============================================================================
 """
 
@@ -15,38 +15,38 @@ import pandas as pd
 
 
 # -----------------------------------------------------------------------
-# 1. PENCARIAN BARIS LAPORAN KEUANGAN
+# 1. FINANCIAL STATEMENT ROW LOOKUP
 # -----------------------------------------------------------------------
 def pick_row(df, candidates):
     """
-    Cari baris pertama yang labelnya cocok dari daftar kandidat.
+    Find the first row whose label matches one of the candidates.
 
-    yfinance memakai nama baris yang berbeda-beda antar emiten, misalnya
+    yfinance uses different row names across issuers, e.g.
     'Depreciation And Amortization' vs 'Depreciation Amortization Depletion'.
-    Fungsi ini mencoba kandidat secara berurutan.
+    This function tries the candidates in order.
 
-    Return: pandas Series (index = tanggal periode) atau None kalau tidak ada.
+    Returns: a pandas Series (index = period date) or None if not found.
     """
     if df is None or not isinstance(df, pd.DataFrame) or df.empty:
         return None
     for label in candidates:
         if label in df.index:
             row = df.loc[label]
-            if isinstance(row, pd.DataFrame):     # duplikat label
+            if isinstance(row, pd.DataFrame):     # duplicate label
                 row = row.iloc[0]
             return pd.to_numeric(row, errors="coerce")
     return None
 
 
 def to_ascending(series):
-    """yfinance mengurutkan kolom dari terbaru ke terlama. Balik jadi kronologis."""
+    """yfinance orders columns newest to oldest. Flip to chronological order."""
     if series is None:
         return None
     return series.sort_index()
 
 
 def safe_div(numerator, denominator, default=np.nan):
-    """Pembagian yang tidak meledak kalau penyebutnya nol, NaN, atau None."""
+    """Division that doesn't blow up when the denominator is zero, NaN, or None."""
     try:
         if denominator is None or numerator is None:
             return default
@@ -59,7 +59,7 @@ def safe_div(numerator, denominator, default=np.nan):
 
 
 def nanmean(values):
-    """Rata-rata yang mengabaikan NaN. Return NaN kalau semua NaN."""
+    """Mean that ignores NaN. Returns NaN if every value is NaN."""
     arr = np.asarray([v for v in values if v is not None], dtype=float)
     if arr.size == 0 or np.all(np.isnan(arr)):
         return np.nan
@@ -67,7 +67,7 @@ def nanmean(values):
 
 
 def nanstd(values, ddof=1):
-    """Standar deviasi sampel yang mengabaikan NaN."""
+    """Sample standard deviation that ignores NaN."""
     arr = np.asarray([v for v in values if v is not None], dtype=float)
     arr = arr[~np.isnan(arr)]
     if arr.size <= ddof:
@@ -77,32 +77,33 @@ def nanstd(values, ddof=1):
 
 def clip_flag(value, low, high, name, flags, unit="x"):
     """
-    Batasi nilai ke rentang wajar. Kalau kena clip, catat flag supaya
-    pengguna tahu angka yang dipakai bukan hasil perhitungan mentah.
+    Clip a value into a reasonable range. If clipped, log a flag so the
+    user knows the number in use isn't the raw computed result.
     """
     if value is None or not np.isfinite(value):
-        flags.warn(name, f"Nilai tidak valid, dipakai batas bawah {low}{unit}")
+        flags.warn(name, f"Invalid value, floor {low}{unit} used instead")
         return low
     if value < low:
-        flags.warn(name, f"Hasil hitung {value:.4f} di bawah batas, di-clip ke {low}")
+        flags.warn(name, f"Computed {value:.4f} below the floor, clipped to {low}")
         return low
     if value > high:
-        flags.warn(name, f"Hasil hitung {value:.4f} di atas batas, di-clip ke {high}")
+        flags.warn(name, f"Computed {value:.4f} above the cap, clipped to {high}")
         return high
     return value
 
 
 # -----------------------------------------------------------------------
-# 2. PENCATATAN FLAG DATA
+# 2. DATA FLAG LOGGING
 # -----------------------------------------------------------------------
 class FlagLog:
     """
-    Menampung seluruh peringatan data selama satu run.
+    Holds every data warning raised during one run.
 
-    Tiga level:
-      MISSING - data tidak ada sama sekali dari yfinance
-      ZERO    - data ada tapi nilainya nol, sering berarti tidak dilaporkan
-      WARN    - data ada tapi hasil hitung di luar rentang wajar atau di-proxy
+    Three levels:
+      MISSING - data is entirely absent from yfinance
+      ZERO    - data exists but is zero, often meaning it wasn't reported
+      WARN    - data exists but the computed result is out of a reasonable
+                range, or was proxied
     """
 
     def __init__(self, ticker=""):
@@ -110,16 +111,16 @@ class FlagLog:
         self.items = []
 
     def missing(self, field, note=""):
-        self.items.append(("MISSING", field, note or "Tidak tersedia di yfinance"))
+        self.items.append(("MISSING", field, note or "Not available from yfinance"))
 
     def zero(self, field, note=""):
-        self.items.append(("ZERO", field, note or "Nilai nol, cek apakah benar-benar nol"))
+        self.items.append(("ZERO", field, note or "Value is zero, verify whether this is genuine"))
 
     def warn(self, field, note=""):
         self.items.append(("WARN", field, note))
 
     def check_series(self, series, field):
-        """Periksa satu deret historis, catat kalau kosong atau ada nol/NaN."""
+        """Check one historical series, logging a flag if it's empty or has zeros/NaN."""
         if series is None or len(series) == 0:
             self.missing(field)
             return False
@@ -130,9 +131,9 @@ class FlagLog:
             self.missing(field)
             return False
         if n_nan > 0:
-            self.warn(field, f"{n_nan} dari {len(arr)} periode bernilai NaN")
+            self.warn(field, f"{n_nan} of {len(arr)} periods are NaN")
         if n_zero > 0:
-            self.zero(field, f"{n_zero} dari {len(arr)} periode bernilai 0")
+            self.zero(field, f"{n_zero} of {len(arr)} periods are 0")
         return True
 
     @property
@@ -141,13 +142,13 @@ class FlagLog:
 
     def to_frame(self):
         if not self.items:
-            return pd.DataFrame(columns=["Level", "Field", "Catatan"])
-        return pd.DataFrame(self.items, columns=["Level", "Field", "Catatan"])
+            return pd.DataFrame(columns=["Level", "Field", "Note"])
+        return pd.DataFrame(self.items, columns=["Level", "Field", "Note"])
 
     def render(self):
-        """Cetak tabel flag dalam format teks."""
+        """Print the flag table as text."""
         if not self.items:
-            return "Tidak ada isu data yang terdeteksi."
+            return "No data quality issues detected."
         lines = []
         order = {"MISSING": 0, "ZERO": 1, "WARN": 2}
         for level, field, note in sorted(self.items, key=lambda x: order.get(x[0], 9)):
@@ -156,10 +157,10 @@ class FlagLog:
 
 
 # -----------------------------------------------------------------------
-# 3. FORMAT ANGKA
+# 3. NUMBER FORMATTING
 # -----------------------------------------------------------------------
 def fmt_idr(value, unit="bn"):
-    """Format angka IDR ke miliar atau triliun."""
+    """Format an IDR number in billions or trillions."""
     if value is None or not np.isfinite(value):
         return "n/a"
     if unit == "tn":

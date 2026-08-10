@@ -1,61 +1,62 @@
 """
 =============================================================================
-UNIVERSE - DAFTAR EMITEN UNTUK BATCH SCREENING
+UNIVERSE - ISSUER LIST FOR BATCH SCREENING
 =============================================================================
-TUJUAN  : Menyediakan daftar ticker yang akan dijalankan secara batch.
+PURPOSE : Provide the list of tickers to run as a batch.
 
-PERINGATAN DATA:
-    Konstituen Kompas100 direvisi dua kali setahun (Februari dan Agustus)
-    oleh BEI bersama Harian Kompas. Daftar di bawah BUKAN daftar resmi dan
-    BUKAN daftar terkini. Ini hanya contoh untuk menguji pipeline.
+DATA WARNING:
+    Kompas100 constituents are revised twice a year (February and August)
+    by IDX together with Harian Kompas. The list below is NOT the official
+    list and is NOT current. It exists only to exercise the pipeline.
 
-    SEBELUM DIPAKAI SERIUS: ganti KOMPAS100 dengan konstituen resmi.
-    Sumber: idx.co.id, pengumuman indeks, atau terminal Bloomberg.
-    Format cukup kode 4 huruf, .JK ditambahkan otomatis oleh Section 1.
+    BEFORE SERIOUS USE: replace KOMPAS100_SAMPLE with the official
+    constituents. Source: idx.co.id, index announcements, or a Bloomberg
+    terminal. A plain 4-letter code is enough; .JK is appended automatically
+    by Section 1.
 
-OUTPUT  : list ticker.
+OUTPUT  : list of tickers.
 =============================================================================
 """
 
 # -----------------------------------------------------------------------
-# CONTOH SAJA - WAJIB DIGANTI DENGAN KONSTITUEN RESMI
+# SAMPLE ONLY - MUST BE REPLACED WITH OFFICIAL CONSTITUENTS
 # -----------------------------------------------------------------------
 KOMPAS100_SAMPLE = [
     # Consumer
     "ICBP", "INDF", "MYOR", "UNVR", "AMRT", "MAPI", "MAPA", "ACES", "MIDI",
-    # Telco dan tower
+    # Telco and towers
     "TLKM", "ISAT", "EXCL", "TBIG", "TOWR", "MTEL",
-    # Tambang dan energi
+    # Mining and energy
     "ADRO", "ITMG", "PTBA", "INCO", "ANTM", "TINS", "MDKA", "AMMN", "INDY",
     "PGAS", "MEDC", "ESSA",
-    # Properti
+    # Property
     "BSDE", "CTRA", "SMRA", "PWON",
-    # Industri dan lain-lain
+    # Industrials and others
     "ASII", "UNTR", "SMGR", "INTP", "INKP", "TKIM", "JPFA", "CPIN",
     "AKRA", "JSMR", "KLBF", "SIDO", "MIKA",
 ]
 
-# Universe kustom milik pengguna. Isi manual.
+# The user's own custom universe. Fill in manually.
 CUSTOM = []
 
 
 def get_universe(name="sample"):
     """
-    name = "sample"  -> daftar contoh di atas
-           "custom"  -> daftar CUSTOM
-           list      -> dipakai langsung
+    name = "sample"  -> the sample list above
+           "custom"  -> the CUSTOM list
+           list      -> used as is
     """
     if isinstance(name, (list, tuple)):
         return list(name)
     if name == "custom":
         if not CUSTOM:
-            raise ValueError("CUSTOM kosong. Isi dulu di universe.py.")
+            raise ValueError("CUSTOM is empty. Fill it in inside universe.py first.")
         return list(CUSTOM)
     return list(KOMPAS100_SAMPLE)
 
 
 UNIVERSE_WARNING = (
-    "Daftar universe yang dipakai adalah contoh, bukan konstituen Kompas100 "
-    "resmi. Ganti isi KOMPAS100_SAMPLE di universe.py dengan daftar resmi dari "
-    "BEI sebelum hasil batch dipakai untuk pengambilan keputusan."
+    "The universe in use is a sample, not the official Kompas100 "
+    "constituents. Replace KOMPAS100_SAMPLE in universe.py with the official "
+    "IDX list before using batch results for decision-making."
 )

@@ -1,51 +1,50 @@
 """
 =============================================================================
-SECTION 7 - PROYEKSI FREE CASH FLOW TO FIRM
+SECTION 7 - FREE CASH FLOW TO FIRM PROJECTION
 =============================================================================
-TUJUAN  : Memproyeksikan arus kas bebas ke perusahaan (FCFF) selama periode
-          eksplisit. FCFF dipilih, bukan FCFE, karena tidak terpengaruh
-          perubahan struktur pendanaan dan langsung berpasangan dengan WACC.
+PURPOSE : Project free cash flow to the firm (FCFF) across the explicit
+          period. FCFF is chosen over FCFE because it's unaffected by
+          changes in funding structure and pairs directly with WACC.
 
-RUMUS   : Untuk setiap tahun t = 1 sampai N
+FORMULA : For every year t = 1 to N
 
-  7.1 Revenue dengan fade linear
+  7.1 Revenue with a linear fade
       g_t      = g_1 - (g_1 - g_terminal) x (t - 1) / (N - 1)
       Rev_t    = Rev_t-1 x (1 + g_t)
 
-      Fade dipakai agar pertumbuhan tidak konstan sampai tahun terakhir lalu
-      terjun bebas ke terminal growth. Pertumbuhan meluruh bertahap menuju
-      tingkat perpetuitas.
+      The fade is used so growth doesn't stay constant until the final year
+      and then free-fall into terminal growth. Growth decays gradually
+      toward the perpetuity rate.
 
-  7.2 Laba operasi
-      EBIT_t   = Rev_t x EBIT margin (konstan, rata-rata historis)
+  7.2 Operating income
+      EBIT_t   = Rev_t x EBIT margin (constant, historical average)
 
-  7.3 Laba operasi setelah pajak
-      NOPAT_t  = EBIT_t x (1 - tarif pajak efektif)
+  7.3 Net operating profit after tax
+      NOPAT_t  = EBIT_t x (1 - effective tax rate)
 
-      Pajak dikenakan pada EBIT, bukan pada laba sebelum pajak, karena FCFF
-      adalah arus kas sebelum pendanaan. Tax shield dari bunga sudah
-      diperhitungkan di dalam WACC melalui Kd x (1 - t). Memasukkannya di
-      kedua tempat adalah double counting.
+      Tax is applied to EBIT, not to pretax income, because FCFF is a
+      pre-financing cash flow. The interest tax shield is already accounted
+      for inside WACC via Kd x (1 - t). Including it in both places would
+      be double counting.
 
-  7.4 Reinvestasi
-      D&A_t    = Rev_t x rasio D&A historis
-      Capex_t  = Rev_t x rasio Capex historis
-      NWC_t    = Rev_t x rasio NWC historis
+  7.4 Reinvestment
+      D&A_t    = Rev_t x historical D&A ratio
+      Capex_t  = Rev_t x historical Capex ratio
+      NWC_t    = Rev_t x historical NWC ratio
       dNWC_t   = NWC_t - NWC_t-1
 
   7.5 FCFF
       FCFF_t   = NOPAT_t + D&A_t - Capex_t - dNWC_t
 
-  7.6 Pemeriksaan konsistensi internal
+  7.6 Internal consistency check
       Reinvestment Rate = (Capex - D&A + dNWC) / NOPAT
-      ROIC              = NOPAT / Invested Capital periode sebelumnya
+      ROIC              = NOPAT / prior period Invested Capital
       Implied growth    = Reinvestment Rate x ROIC
 
-      Kalau implied growth jauh berbeda dari asumsi revenue growth, model
-      tidak konsisten secara internal. Selisihnya dilaporkan, tidak
-      disembunyikan.
+      If implied growth differs greatly from the assumed revenue growth,
+      the model is not internally consistent. The gap is reported, not hidden.
 
-OUTPUT  : DataFrame proyeksi per tahun dan dict ringkasan.
+OUTPUT  : a per-year projection DataFrame and a summary dict.
 =============================================================================
 """
 
@@ -58,8 +57,8 @@ from config import ASSUMPTIONS
 def project_fcff(hist, drv, snapshot, years=None, g1=None,
                  ebit_margin=None, terminal_g=None, ebit_margin_target=None):
     """
-    Bangun proyeksi FCFF. Parameter opsional dipakai oleh Section 12
-    (skenario) untuk menimpa nilai base tanpa mengubah driver aslinya.
+    Build the FCFF projection. Optional parameters are used by Section 12
+    (scenarios) to override the base values without changing the original drivers.
     """
     A = ASSUMPTIONS
     N = int(years or A["forecast_years"])
@@ -67,10 +66,10 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
     margin = drv["ebit_margin"] if ebit_margin is None else ebit_margin
     g_term = A["terminal_growth"] if terminal_g is None else terminal_g
 
-    # Margin target. Kalau tidak ada operating leverage, target = base
-    # sehingga fade-nya datar dan perilakunya identik dengan margin konstan.
-    # Kalau pemanggil menimpa margin base (dipakai Section 12 untuk skenario),
-    # target digeser dengan selisih yang sama agar skenario tetap koheren.
+    # Margin target. If there's no operating leverage, target = base, so the
+    # fade is flat and behaves identically to a constant margin. If the
+    # caller overrides the base margin (used by Section 12 for scenarios),
+    # the target is shifted by the same delta so the scenario stays coherent.
     if ebit_margin_target is not None:
         m_target = ebit_margin_target
     else:
@@ -83,24 +82,24 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
     cx_r = drv["capex_ratio"]
     nwc_r = drv["nwc_ratio"]
 
-    # Terminal growth tidak boleh melampaui growth tahun pertama. Tanpa ini,
-    # fade justru MENGAKSELERASI pertumbuhan menuju perpetuitas. ASII keluar
-    # 2.42% naik ke 4.00%, kebalikan dari logika fade.
+    # Terminal growth may not exceed year-one growth. Without this, the
+    # fade actually ACCELERATES growth toward the perpetuity rate. ASII came
+    # out at 2.42% rising to 4.00%, the opposite of the fade logic.
     if A["cap_terminal_at_g1"] and g_term > g1:
         g_term = max(g1, 0.0)
 
-    # Capex tidak boleh di bawah D&A ketika perusahaan tumbuh. Kalau capex
-    # kurang dari beban penyusutan, basis aset menyusut, dan itu perusahaan
-    # yang mengecil. MAPA keluar capex 5.81% dengan D&A 6.79%, kombinasi yang
-    # jadi mesin pencetak FCFF palsu lewat add-back D&A besar dengan pengurang
-    # capex kecil.
+    # Capex may not fall below D&A while the company is growing. If capex
+    # is less than the depreciation charge, the asset base is shrinking,
+    # which is a company in decline. MAPA came out with capex at 5.81%
+    # against D&A of 6.79%, a combination that becomes a fake FCFF-printing
+    # machine via a large D&A add-back paired with a small capex deduction.
     if g1 > 0 and cx_r < da_r:
         cx_r = da_r
 
     rev0 = snapshot["revenue"]
-    nwc0 = rev0 * nwc_r          # basis NWC diselaraskan dengan rasio, bukan angka mentah,
-                                 # supaya dNWC tahun pertama tidak melompat karena
-                                 # perbedaan definisi NWC historis dan proyeksi.
+    nwc0 = rev0 * nwc_r          # the NWC base is aligned to the ratio, not the raw
+                                 # figure, so year-one dNWC doesn't jump because of a
+                                 # definitional mismatch between historical and projected NWC.
     ic0 = snapshot["invested_capital"]
 
     rows = []
@@ -109,7 +108,7 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
     prev_ic = ic0
 
     for t in range(1, N + 1):
-        # 7.1 fade linear
+        # 7.1 linear fade
         if N > 1:
             g_t = g1 - (g1 - g_term) * (t - 1) / (N - 1)
         else:
@@ -117,8 +116,8 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
 
         rev = prev_rev * (1 + g_t)
 
-        # 7.2 Margin fade LINEAR dari base (tahun 1) ke target (tahun N).
-        #     Tahun 1 memakai margin base, tahun N memakai margin target.
+        # 7.2 Margin fades LINEARLY from base (year 1) to target (year N).
+        #     Year 1 uses the base margin, year N uses the target margin.
         if N > 1:
             m_t = margin + (m_target - margin) * (t - 1) / (N - 1)
         else:
@@ -139,7 +138,7 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
         implied_g = rr * roic if (np.isfinite(rr) and np.isfinite(roic)) else np.nan
 
         rows.append({
-            "Tahun": t,
+            "Year": t,
             "Growth": g_t,
             "Revenue": rev,
             "EBIT": ebit,
@@ -159,7 +158,7 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
         prev_nwc = nwc
         prev_ic = prev_ic + reinvest if np.isfinite(reinvest) else prev_ic
 
-    proj = pd.DataFrame(rows).set_index("Tahun")
+    proj = pd.DataFrame(rows).set_index("Year")
 
     summary = {
         "years": N,
@@ -180,7 +179,7 @@ def project_fcff(hist, drv, snapshot, years=None, g1=None,
 
 
 def projection_table(proj):
-    """Format proyeksi ke miliar rupiah untuk ditampilkan."""
+    """Format the projection into IDR billions for display."""
     out = pd.DataFrame(index=proj.index)
     out["Growth %"] = (proj["Growth"] * 100).round(2)
     out["Revenue (bn)"] = (proj["Revenue"] / 1e9).round(0)

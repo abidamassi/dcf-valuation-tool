@@ -1,22 +1,22 @@
 """
 =============================================================================
-SECTION 10 - KEPUTUSAN REKOMENDASI
+SECTION 10 - RECOMMENDATION DECISION
 =============================================================================
-TUJUAN  : Menerjemahkan selisih antara fair value model dan harga pasar
-          menjadi satu keputusan yang bisa ditindaklanjuti.
+PURPOSE : Translate the gap between the model's fair value and the market
+          price into one actionable decision.
 
-RUMUS   : Upside = (Fair Value per Share / Harga Pasar) - 1
+FORMULA : Upside = (Fair Value per Share / Market Price) - 1
 
           Upside > +10%             -> BUY     (undervalued)
           -10% <= Upside <= +10%    -> HOLD    (fairly valued)
           Upside < -10%             -> SELL    (overvalued)
 
-          Ambang 10% dipakai sebagai zona toleransi kesalahan model. Selisih
-          di bawah 10% tidak bermakna secara statistik mengingat sensitivitas
-          DCF terhadap WACC dan terminal growth. Ini bukan presisi, ini
-          pengakuan atas ketidakpastian.
+          The 10% threshold acts as a tolerance zone for model error. A gap
+          below 10% isn't statistically meaningful given the DCF's
+          sensitivity to WACC and terminal growth. This is not precision,
+          it's an acknowledgement of uncertainty.
 
-OUTPUT  : dict {rating, upside, label, catatan}
+OUTPUT  : dict {rating, upside, label, note}
 =============================================================================
 """
 
@@ -35,8 +35,8 @@ def make_recommendation(valuation, flags=None):
         return {
             "rating": "N/A",
             "upside": np.nan,
-            "label": "Tidak dapat dinilai",
-            "catatan": "Fair value atau harga pasar tidak tersedia.",
+            "label": "Cannot be rated",
+            "note": "Fair value or market price is unavailable.",
         }
 
     if upside > A["buy_threshold"]:
@@ -46,24 +46,24 @@ def make_recommendation(valuation, flags=None):
     else:
         rating, label = "HOLD", "Fairly valued"
 
-    catatan = (
-        f"Fair value model IDR {fv:,.0f} versus harga pasar IDR {px:,.0f}, "
+    note = (
+        f"Model fair value IDR {fv:,.0f} versus market price IDR {px:,.0f}, "
         f"upside {upside*100:+.1f}%."
     )
 
-    # Peringatan kalau selisihnya ekstrem, biasanya tanda asumsi bermasalah
+    # Flag when the gap is extreme, usually a sign of a problematic assumption
     if abs(upside) > 1.0 and flags is not None:
-        flags.warn("Rekomendasi",
-                   f"Upside {upside*100:+.0f}% terlalu ekstrem. Pada praktiknya "
-                   f"selisih sebesar ini lebih sering menandakan kesalahan asumsi "
-                   f"atau data ketimbang mispricing pasar. Periksa WACC, terminal "
-                   f"growth, dan margin EBIT sebelum dipakai.")
+        flags.warn("Recommendation",
+                   f"Upside of {upside*100:+.0f}% is too extreme. In practice a "
+                   f"gap this large more often signals a flawed assumption or "
+                   f"data issue than genuine market mispricing. Check WACC, "
+                   f"terminal growth, and EBIT margin before relying on it.")
 
     return {
         "rating": rating,
         "upside": float(upside),
         "label": label,
-        "catatan": catatan,
+        "note": note,
         "threshold_buy": A["buy_threshold"],
         "threshold_sell": A["sell_threshold"],
     }

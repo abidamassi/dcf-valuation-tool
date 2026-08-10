@@ -1,136 +1,138 @@
 """
 =============================================================================
-CONFIG - PUSAT ASUMSI DAN THRESHOLD
+CONFIG - CENTRAL ASSUMPTIONS AND THRESHOLDS
 =============================================================================
-TUJUAN  : Menyimpan seluruh angka asumsi dan batas screening di satu tempat.
-          Tidak ada angka ajaib (magic number) yang boleh ditulis langsung di
-          modul lain. Semua yang bisa digeser nanti di slider, ada di sini.
-RUMUS   : Tidak ada. Ini file konstanta.
-OUTPUT  : Dictionary ASSUMPTIONS dan SCREENING.
+PURPOSE : Keep every assumption number and screening threshold in one place.
+          No magic numbers are allowed to be written directly in other
+          modules. Everything that may later become a slider lives here.
+FORMULA : None. This is a constants file.
+OUTPUT  : ASSUMPTIONS and SCREENING dictionaries.
 =============================================================================
 """
 
 # -----------------------------------------------------------------------
-# A. ASUMSI COST OF CAPITAL (kandidat slider fase 2)
+# A. COST OF CAPITAL ASSUMPTIONS (phase-2 slider candidates)
 # -----------------------------------------------------------------------
 ASSUMPTIONS = {
-    # Risk-free rate. Default proxy INDOGB 10Y. Diisi manual, tidak di-fetch.
+    # Risk-free rate. Default proxy is the INDOGB 10Y. Entered manually, not fetched.
     "risk_free_rate":       0.065,   # 6.50%   slider 0.050 - 0.090
-    # Equity Risk Premium. Diturunkan dari 7.00% ke 4.00% atas keputusan
-    # pengguna. CATATAN METODOLOGIS: 4.00% mendekati level ERP mature market
-    # (US, Eropa Barat). Referensi Damodaran untuk Indonesia umumnya 6.5-8%
-    # karena memuat country risk premium. Penurunan ini menaikkan fair value
-    # lewat kanal diskonto, BUKAN karena FCFF membaik. Kalau upside terlihat
-    # besar, sumbernya kemungkinan besar dari sini.
+    # Equity Risk Premium. Lowered from 7.00% to 4.00% at the user's decision.
+    # METHODOLOGICAL NOTE: 4.00% is close to mature-market ERP levels
+    # (US, Western Europe). Damodaran's reference for Indonesia is typically
+    # 6.5-8% because it embeds a country risk premium. This reduction raises
+    # fair value through the discount-rate channel, NOT because FCFF
+    # improved. If the upside looks large, this is the most likely source.
     "equity_risk_premium":  0.040,   # 4.00%   slider 0.030 - 0.100
-    # Premi tambahan untuk small/mid cap. Default 0 (konservatif = tidak ada).
+    # Extra premium for small/mid caps. Default 0 (conservative = none).
     "size_premium":         0.000,   # 0.00%   slider 0.000 - 0.030
 
-    # Batas wajar hasil perhitungan. Kalau tembus, di-clip dan diberi flag.
+    # Reasonable bounds on computed results. If breached, the value is clipped and flagged.
     "beta_floor":           0.40,
     "beta_cap":             2.20,
     "tax_floor":            0.15,
     "tax_cap":              0.30,
-    "tax_fallback":         0.22,    # Tarif PPh Badan Indonesia (UU HPP 7/2021)
-    # Lantai Cost of Debt relatif terhadap Rf. Tidak ada korporasi yang
-    # meminjam di bawah pemerintahnya sendiri. Sebelumnya lantai absolut 3.0%
-    # membuat ASII keluar Kd 3.75% padahal Rf 6.50%, jelas mustahil.
-    "cod_spread_floor":     0.010,   # Kd minimum = Rf + 100bps
+    "tax_fallback":         0.22,    # Indonesian corporate income tax rate (Law 7/2021 on HPP)
+    # Cost of Debt floor relative to Rf. No corporation borrows below its own
+    # government. An earlier absolute floor of 3.0% let ASII come out at
+    # Kd 3.75% against an Rf of 6.50%, which is clearly implausible.
+    "cod_spread_floor":     0.010,   # Minimum Kd = Rf + 100bps
     "cod_floor":            0.030,
     "cod_cap":              0.200,
 
-    # Beta dengan daya jelas rendah tidak dipakai. R-squared di bawah ambang
-    # ini berarti pergerakan saham nyaris tidak dijelaskan pasar, sehingga
-    # beta hasil regresi tidak bermakna. Diganti 1.0 dengan flag.
+    # Beta with low explanatory power is not used. An R-squared below this
+    # threshold means stock movement is barely explained by the market, so
+    # the regression beta is not meaningful. Replaced with 1.0 and flagged.
     "beta_min_r2":          0.20,
 
-    # Beta yang jatuh di bawah 1.0 setelah Blume adjustment diganti dengan
-    # nilai ini. Dipakai juga sebagai fallback ketika regresi ditolak karena
-    # R-squared rendah. Alasan: regresi harian terhadap IHSG cenderung
-    # meng-understate beta emiten non-keuangan karena indeks didominasi bank,
-    # ditambah bias non-synchronous trading pada saham berlikuiditas tipis.
+    # Beta that falls below 1.0 after the Blume adjustment is replaced with
+    # this value. Also used as the fallback when the regression is rejected
+    # for low R-squared. Rationale: a daily regression against IHSG tends to
+    # understate non-financial issuers' beta because the index is dominated
+    # by banks, compounded by non-synchronous trading bias in thinly traded
+    # stocks.
     "beta_fallback":        1.20,
 
-    # Periode dan frekuensi regresi beta.
+    # Beta regression period and frequency.
     "beta_period":          "1y",
-    "beta_interval":        "1d",    # harian, sekitar 252 observasi
+    "beta_interval":        "1d",    # daily, roughly 252 observations
     "wacc_floor":           0.060,
     "wacc_cap":             0.250,
 
     # -------------------------------------------------------------------
-    # B. ASUMSI PROYEKSI
+    # B. PROJECTION ASSUMPTIONS
     # -------------------------------------------------------------------
     "forecast_years":       5,       # slider 5 - 10
     "terminal_growth":      0.040,   # 4.00%   slider 0.000 - 0.060
-    "mid_year_convention":  True,    # Cash flow dianggap terjadi di tengah tahun
+    "mid_year_convention":  True,    # Cash flow is assumed to occur mid-year
 
-    # Spread minimum WACC dikurangi terminal growth. Sebelumnya 50bps, terlalu
-    # longgar: INDF keluar spread 342bps dan terminal value melonjak jadi 84.5%
-    # dari EV. Di bawah 400bps, Gordon Growth terlalu sensitif untuk dipakai.
+    # Minimum spread of WACC minus terminal growth. Previously 50bps, which
+    # was too loose: INDF came out with a 342bps spread and terminal value
+    # ballooned to 84.5% of EV. Below 400bps, Gordon Growth is too sensitive to use.
     "min_wacc_g_spread":    0.040,   # 400bps
 
-    # Terminal growth tidak boleh melampaui growth tahun pertama. Tanpa batas
-    # ini, fade justru MENGAKSELERASI pertumbuhan menuju perpetuitas, seperti
-    # yang terjadi pada ASII (2.42% naik ke 4.00%). Terminal growth adalah
-    # batas atas, bukan target yang dikejar.
+    # Terminal growth may not exceed year-one growth. Without this cap, the
+    # fade actually ACCELERATES growth toward the perpetuity rate, as
+    # happened with ASII (2.42% rising to 4.00%). Terminal growth is a
+    # ceiling, not a target to chase.
     "cap_terminal_at_g1":   True,
 
-    # Validasi silang D&A hasil derivasi terhadap Net PP&E. Di luar rentang
-    # ini, derivasi EBITDA dikurangi EBIT dianggap tidak dapat dipercaya.
+    # Cross-check for derived D&A against Net PP&E. Outside this range, the
+    # EBITDA-minus-EBIT derivation is considered unreliable.
     "da_over_netppe_floor": 0.05,
     "da_over_netppe_cap":   0.35,
 
     # ---------------- MARGIN EXPANSION ----------------
-    # Margin EBIT tidak lagi konstan. Kalau terdeteksi operating leverage di
-    # data historis, margin di-fade LINEAR dari margin base (median historis)
-    # menuju margin TERTINGGI yang pernah dicapai emiten, tercapai di tahun N.
+    # EBIT margin is no longer held constant. When operating leverage is
+    # detected in the historical data, margin fades LINEARLY from the base
+    # margin (historical median) toward the HIGHEST margin the issuer has
+    # ever achieved, reached in year N.
     #
-    # Aktivasi BERSYARAT, bukan otomatis untuk semua emiten. Syaratnya ada
-    # korelasi positif antara revenue dan EBIT margin di data historis. Tanpa
-    # bukti itu, margin tetap flat seperti sebelumnya. Ini mencegah margin
-    # expansion dipaksakan pada emiten yang justru marginnya menyusut saat
-    # revenue naik.
+    # Activation is CONDITIONAL, not automatic for every issuer. It requires
+    # a positive correlation between revenue and EBIT margin in the
+    # historical data. Without that evidence, margin stays flat as before.
+    # This prevents margin expansion from being forced onto issuers whose
+    # margin actually shrinks as revenue grows.
     "margin_expansion_enabled":  True,
-    "margin_oplev_min_corr":     0.50,   # korelasi revenue vs margin minimum
-    "margin_target_cap":         0.60,   # margin target maksimum 60%, rem waras
+    "margin_oplev_min_corr":     0.50,   # minimum revenue vs margin correlation
+    "margin_target_cap":         0.60,   # maximum target margin of 60%, a sanity brake
 
-    # Batas wajar growth revenue tahun-1 hasil moving average historis.
-    # Ini rem konservatif supaya emiten yang kebetulan tumbuh 80% dua tahun
-    # terakhir tidak diekstrapolasi jadi selamanya.
+    # Reasonable bounds on year-one revenue growth from the historical
+    # moving average. This is a conservative brake so an issuer that
+    # happened to grow 80% over the last two years isn't extrapolated forever.
     "rev_growth_floor":    -0.100,   # -10%
     "rev_growth_cap":       0.250,   # +25%
 
-    # Batas wajar rasio driver hasil moving average.
-    "capex_ratio_cap":      0.300,   # Capex maksimum 30% dari revenue
+    # Reasonable bounds on moving-average driver ratios.
+    "capex_ratio_cap":      0.300,   # Capex capped at 30% of revenue
     "nwc_ratio_floor":     -0.300,
     "nwc_ratio_cap":        0.600,
 
     # -------------------------------------------------------------------
-    # C. PARAMETER SKENARIO DAN SENSITIVITY
+    # C. SCENARIO AND SENSITIVITY PARAMETERS
     # -------------------------------------------------------------------
-    "scenario_sd_multiple": 1.0,     # Bull/Bear = Base +/- 1 standar deviasi
-    "scenario_g_shift":     0.005,   # Terminal growth digeser +/- 50bps
-    # Lantai standar deviasi. Kalau volatilitas historis mendekati nol,
-    # skenario Bull dan Bear akan identik dengan Base dan tidak informatif.
+    "scenario_sd_multiple": 1.0,     # Bull/Bear = Base +/- 1 standard deviation
+    "scenario_g_shift":     0.005,   # Terminal growth shifted +/- 50bps
+    # Standard-deviation floor. If historical volatility is close to zero,
+    # the Bull and Bear scenarios would be identical to Base and uninformative.
     "min_growth_sd":        0.030,   # 300bps
     "min_margin_sd":        0.010,   # 100bps
-    "sens_wacc_step":       0.005,   # Grid WACC +/- 50bps
-    "sens_g_step":          0.0025,  # Grid terminal growth +/- 25bps
-    "sens_steps":           2,       # 2 langkah tiap arah, jadi grid 5x5
+    "sens_wacc_step":       0.005,   # WACC grid +/- 50bps
+    "sens_g_step":          0.0025,  # Terminal growth grid +/- 25bps
+    "sens_steps":           2,       # 2 steps each direction, so a 5x5 grid
 
     # -------------------------------------------------------------------
-    # D. AMBANG REKOMENDASI
+    # D. RECOMMENDATION THRESHOLDS
     # -------------------------------------------------------------------
     "buy_threshold":        0.10,    # Upside > +10%  -> BUY
     "sell_threshold":      -0.10,    # Upside < -10%  -> SELL
-                                     # Di antaranya   -> HOLD
+                                     # In between      -> HOLD
 }
 
 # -----------------------------------------------------------------------
-# E. GATE SCREENING
+# E. SCREENING GATES
 # -----------------------------------------------------------------------
 SCREENING = {
-    # Gate 1 - Kelayakan model (FCFF/WACC tidak berlaku untuk lembaga keuangan)
+    # Gate 1 - Model eligibility (FCFF/WACC does not apply to financial institutions)
     "excluded_sectors": ["Financial Services", "Financial"],
     "excluded_industry_keywords": [
         "bank", "insurance", "asuransi", "capital markets", "credit services",
@@ -138,49 +140,47 @@ SCREENING = {
         "financial conglomerates", "shell companies",
     ],
 
-    # Gate 2 - Kecukupan data
-    "min_annual_years": 4,           # Minimal 4 tahun laporan tahunan lengkap
+    # Gate 2 - Data sufficiency
+    "min_annual_years": 4,           # At least 4 complete years of annual filings
 
-    # Gate 3 - Kelayakan operasional
-    "min_ebit_positive_years": 2,    # EBIT positif minimal 2 dari 3 tahun terakhir
+    # Gate 3 - Operational viability
+    "min_ebit_positive_years": 2,    # EBIT positive in at least 2 of the last 3 years
     "ebit_lookback_years": 3,
 
-    # Gate 4 - Ukuran dan valuasi
-    "min_market_cap_idr": 1_000_000_000_000,   # IDR 1 triliun
+    # Gate 4 - Size and valuation
+    "min_market_cap_idr": 1_000_000_000_000,   # IDR 1 trillion
     "pe_min": 1.0,
     "pe_max": 60.0,
 
-    # Gate 5 - Struktur modal (syarat agar FCFF/WACC menghasilkan angka
-    #          yang bermakna, bukan residual yang meledak)
-    "require_positive_equity": True,       # Ekuitas negatif merusak bobot WACC
-    "max_debt_to_capital": 0.80,           # D/(D+E) maksimum 80%
-    "max_net_debt_ebitda": 6.0,            # Net Debt/EBITDA maksimum 6.0x
+    # Gate 5 - Capital structure (required for FCFF/WACC to produce a
+    #          meaningful number instead of an exploding residual)
+    "require_positive_equity": True,       # Negative equity breaks the WACC weights
+    "max_debt_to_capital": 0.80,           # D/(D+E) capped at 80%
+    "max_net_debt_ebitda": 6.0,            # Net Debt/EBITDA capped at 6.0x
     "min_interest_coverage": 1.0,          # EBIT/Interest minimum 1.0x
     "require_positive_ebitda": True,
 
     # Gate 12 - Holding company
-    # DCF konsolidasi mengambil 100% arus kas anak usaha lalu mengurangi
-    # kepentingan non-pengendali pada NILAI BUKU. Untuk holdco, selisih antara
-    # nilai buku MI dan nilai ekonomisnya besar, dan holding discount yang
-    # secara historis melekat pada emiten seperti INDF dan ASII tidak akan
-    # pernah tertangkap. Ditolak, bukan dipaksakan.
+    # A consolidated DCF takes 100% of a subsidiary's cash flow and then
+    # deducts non-controlling interest at BOOK VALUE. For a holdco, the gap
+    # between NCI's book value and its economic value can be large, and the
+    # holding discount that historically attaches to issuers like INDF and
+    # ASII would never be captured. Rejected, not forced through.
     "max_minority_to_equity": 0.15,
 }
 
 # -----------------------------------------------------------------------
-# F. KURS FALLBACK
+# F. FALLBACK FX RATE
 # -----------------------------------------------------------------------
-# Dipakai HANYA kalau fetch USDIDR dari yfinance gagal.
-# WAJIB DIVERIFIKASI SEBELUM DIPAKAI. Angka ini bukan data, ini placeholder.
+# Used ONLY if fetching USDIDR from yfinance fails.
+# MUST BE VERIFIED BEFORE USE. This number is not data, it is a placeholder.
 FALLBACK_USDIDR = 16_000.0
 
 # -----------------------------------------------------------------------
 # G. DISCLAIMER
 # -----------------------------------------------------------------------
 DISCLAIMER = (
-    "Disclaimer On. Output ini dihasilkan oleh model otomatis berbasis data "
-    "publik yfinance dan asumsi yang diinput pengguna. Angka belum diverifikasi "
-    "terhadap laporan keuangan resmi, belum memperhitungkan corporate action "
-    "maupun peristiwa setelah tanggal neraca, dan bukan merupakan rekomendasi "
-    "investasi. Untuk keperluan analisis internal."
+    "Automated model output based on public yfinance data and user-set "
+    "assumptions. Not reconciled against audited filings, not a corporate-action "
+    "adjustment, and not investment advice. For internal analysis only."
 )

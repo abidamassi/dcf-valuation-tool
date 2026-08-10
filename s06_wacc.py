@@ -2,38 +2,38 @@
 =============================================================================
 SECTION 6 - COST OF CAPITAL (CAPM, COST OF DEBT, WACC)
 =============================================================================
-TUJUAN  : Menentukan tingkat diskonto. Ini variabel tunggal paling
-          berpengaruh terhadap hasil DCF, jadi setiap komponennya
-          ditampilkan terpisah agar bisa diperdebatkan satu per satu.
+PURPOSE : Determine the discount rate. This is the single most influential
+          variable in the DCF result, so every component is shown
+          separately so each can be debated on its own.
 
-RUMUS   :
+FORMULA :
   6.1 COST OF EQUITY (CAPM)
       Ke = Rf + Beta x ERP + Size Premium
 
-      Rf   = risk-free rate, default 6.50% (proxy INDOGB 10Y, input manual)
-      ERP  = equity risk premium Indonesia, default 7.00% (input manual)
-      Beta = hasil Section 5 (Blume adjusted)
+      Rf   = risk-free rate, default 6.50% (INDOGB 10Y proxy, manual input)
+      ERP  = Indonesia equity risk premium, default 7.00% (manual input)
+      Beta = Section 5 result (Blume adjusted)
 
-      Catatan metodologis: Rf memakai yield obligasi pemerintah IDR yang
-      sudah mengandung country risk. Menambahkan ERP yang juga mengandung
-      country risk premium berpotensi double counting. Kami menerima ini
-      sebagai konvensi desk, tapi angkanya harus dibaca sebagai satu paket,
-      bukan dijumlahkan lagi dengan premi negara.
+      Methodological note: Rf uses the IDR government bond yield, which
+      already embeds country risk. Adding an ERP that also embeds a
+      country risk premium is potentially double counting. We accept this
+      as a desk convention, but the number should be read as one package,
+      not summed again with a separate country premium.
 
-  6.2 COST OF DEBT (dari data internal, tanpa sumber eksternal)
-      Kd = Interest Expense_t / Rata-rata Total Debt
+  6.2 COST OF DEBT (from internal data, no external source)
+      Kd = Interest Expense_t / Average Total Debt
 
-      Rata-rata Total Debt = (Total Debt_t + Total Debt_t-1) / 2
+      Average Total Debt = (Total Debt_t + Total Debt_t-1) / 2
 
-      Dihitung untuk setiap periode yang tersedia, lalu diambil rata-rata.
-      Kalau emiten tidak punya utang atau data bunga tidak tersedia,
-      Kd diproksi sebagai Rf + 200bps dan diberi flag.
+      Computed for every available period, then averaged. If the issuer
+      has no debt or interest data is unavailable, Kd is proxied as
+      Rf + 200bps and flagged.
 
-      Kd setelah pajak = Kd x (1 - tarif pajak efektif)
+      Kd after tax = Kd x (1 - effective tax rate)
 
-  6.3 BOBOT STRUKTUR MODAL
-      E = Market Cap (harga pasar, bukan nilai buku)
-      D = Total Debt periode terakhir (nilai buku sebagai proksi nilai pasar)
+  6.3 CAPITAL STRUCTURE WEIGHTS
+      E = Market Cap (market price, not book value)
+      D = Latest period Total Debt (book value as a proxy for market value)
 
       w_E = E / (D + E)
       w_D = D / (D + E)
@@ -41,7 +41,7 @@ RUMUS   :
   6.4 WACC
       WACC = w_E x Ke + w_D x Kd x (1 - t)
 
-OUTPUT  : dict berisi seluruh komponen, siap ditampilkan sebagai tabel.
+OUTPUT  : dict with every component, ready to display as a table.
 =============================================================================
 """
 
@@ -72,8 +72,8 @@ def cost_of_equity(beta_adj, rf=None, erp=None, size_prem=None):
 # -----------------------------------------------------------------------
 def cost_of_debt(hist, tax_rate, flags, rf=None):
     """
-    Kd dari beban bunga historis dibagi rata-rata saldo utang.
-    Tidak memakai credit spread eksternal sama sekali.
+    Kd from historical interest expense divided by the average debt balance.
+    No external credit spread is used at all.
     """
     A = ASSUMPTIONS
     rf = A["risk_free_rate"] if rf is None else rf
@@ -92,33 +92,33 @@ def cost_of_debt(hist, tax_rate, flags, rf=None):
         rates.append(ie / avg_debt)
 
     kd_raw = nanmean(rates)
-    method = "Interest Expense / rata-rata Total Debt"
+    method = "Interest Expense / average Total Debt"
 
     last_debt = debt.iloc[-1] if pd.notna(debt.iloc[-1]) else 0.0
     if last_debt <= 0:
         kd = rf + 0.02
-        method = "Tidak ada utang. Kd proksi = Rf + 200bps (bobot utang nol)."
+        method = "No debt. Kd proxied as Rf + 200bps (zero debt weight)."
         flags.warn("Cost of Debt", method)
     elif not np.isfinite(kd_raw):
         kd = rf + 0.02
-        method = "Beban bunga tidak tersedia. Kd proksi = Rf + 200bps."
+        method = "Interest expense unavailable. Kd proxied as Rf + 200bps."
         flags.warn("Cost of Debt", method)
     else:
-        # Lantai relatif terhadap Rf. Tidak ada korporasi yang meminjam di
-        # bawah pemerintahnya sendiri. Rumus Interest Expense / Total Debt
-        # rusak ketika yfinance melaporkan bunga secara neto, atau ketika
-        # Total Debt memasukkan liabilitas sewa PSAK 73 yang bebannya tidak
-        # masuk baris interest expense. ASII keluar 3.75% dengan Rf 6.50%.
+        # Floor relative to Rf. No corporation borrows below its own
+        # government. The Interest Expense / Total Debt formula breaks when
+        # yfinance reports interest net, or when Total Debt includes PSAK 73
+        # lease liabilities whose expense doesn't appear in interest expense.
+        # ASII came out at 3.75% against an Rf of 6.50%.
         floor_rel = rf + A["cod_spread_floor"]
         floor = max(A["cod_floor"], floor_rel)
         if kd_raw < floor_rel:
             flags.warn("Cost of Debt",
-                       f"Hasil hitung {kd_raw*100:.2f}% berada DI BAWAH risk-free "
-                       f"rate + {A['cod_spread_floor']*100:.0f}bps. Secara ekonomi "
-                       f"mustahil. Kemungkinan beban bunga dilaporkan neto atau "
-                       f"Total Debt memuat liabilitas sewa PSAK 73. "
-                       f"Dinaikkan ke {floor_rel*100:.2f}%.")
-            method += " (dinaikkan ke lantai Rf + spread)"
+                       f"Computed {kd_raw*100:.2f}% is BELOW the risk-free "
+                       f"rate + {A['cod_spread_floor']*100:.0f}bps. Economically "
+                       f"implausible. Interest expense may be reported net, or "
+                       f"Total Debt may include PSAK 73 lease liabilities. "
+                       f"Raised to {floor_rel*100:.2f}%.")
+            method += " (raised to the Rf + spread floor)"
         kd = clip_flag(kd_raw, floor, A["cod_cap"], "Cost of Debt", flags)
 
     return {
@@ -137,7 +137,7 @@ def cost_of_debt(hist, tax_rate, flags, rf=None):
 def compute_wacc(data, hist, drv, beta_info, flags,
                  rf=None, erp=None, size_prem=None):
     """
-    Rangkai Ke, Kd, dan bobot struktur modal menjadi WACC.
+    Combine Ke, Kd, and the capital structure weights into WACC.
     """
     A = ASSUMPTIONS
     tax = drv["tax_rate"]
@@ -151,12 +151,12 @@ def compute_wacc(data, hist, drv, beta_info, flags,
 
     if not np.isfinite(E) or E <= 0:
         E = float(hist.loc["equity"].iloc[-1])
-        flags.warn("Bobot ekuitas", "Market cap tidak tersedia. "
-                                    "Dipakai nilai buku ekuitas, bukan nilai pasar.")
+        flags.warn("Equity weight", "Market cap unavailable. "
+                                    "Book value of equity used instead of market value.")
 
     total_cap = E + D
     if total_cap <= 0:
-        flags.warn("WACC", "Total kapital nol. WACC tidak dapat dihitung.")
+        flags.warn("WACC", "Total capital is zero. WACC cannot be computed.")
         return None
 
     w_e = E / total_cap
@@ -188,20 +188,20 @@ def compute_wacc(data, hist, drv, beta_info, flags,
 
 
 def wacc_table(w):
-    """Tabel rincian WACC untuk output."""
+    """WACC breakdown table for output."""
     rows = [
-        ("Risk-free rate (input manual)", f"{w['rf']*100:.2f}%"),
-        ("Equity Risk Premium (input manual)", f"{w['erp']*100:.2f}%"),
-        ("Beta raw (regresi vs IHSG)", f"{w['beta_raw']:.3f}" if np.isfinite(w['beta_raw']) else "n/a"),
+        ("Risk-free rate (manual input)", f"{w['rf']*100:.2f}%"),
+        ("Equity Risk Premium (manual input)", f"{w['erp']*100:.2f}%"),
+        ("Beta raw (regression vs IHSG)", f"{w['beta_raw']:.3f}" if np.isfinite(w['beta_raw']) else "n/a"),
         ("Beta adjusted (Blume)", f"{w['beta_adj']:.3f}"),
-        ("R-squared regresi beta", f"{w['beta_r2']:.3f}" if np.isfinite(w['beta_r2']) else "n/a"),
+        ("Beta regression R-squared", f"{w['beta_r2']:.3f}" if np.isfinite(w['beta_r2']) else "n/a"),
         ("Size premium", f"{w['size_premium']*100:.2f}%"),
         ("Cost of Equity (CAPM)", f"{w['ke']*100:.2f}%"),
-        ("Cost of Debt sebelum pajak", f"{w['kd_pretax']*100:.2f}%"),
-        ("Tarif pajak efektif", f"{w['tax_rate']*100:.2f}%"),
-        ("Cost of Debt setelah pajak", f"{w['kd_aftertax']*100:.2f}%"),
-        ("Bobot ekuitas E/(D+E)", f"{w['weight_equity']*100:.1f}%"),
-        ("Bobot utang D/(D+E)", f"{w['weight_debt']*100:.1f}%"),
+        ("Cost of Debt, pre-tax", f"{w['kd_pretax']*100:.2f}%"),
+        ("Effective tax rate", f"{w['tax_rate']*100:.2f}%"),
+        ("Cost of Debt, after-tax", f"{w['kd_aftertax']*100:.2f}%"),
+        ("Equity weight E/(D+E)", f"{w['weight_equity']*100:.1f}%"),
+        ("Debt weight D/(D+E)", f"{w['weight_debt']*100:.1f}%"),
         ("WACC", f"{w['wacc']*100:.2f}%"),
     ]
-    return pd.DataFrame(rows, columns=["Komponen", "Nilai"])
+    return pd.DataFrame(rows, columns=["Component", "Value"])

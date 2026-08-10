@@ -1,50 +1,50 @@
 """
 =============================================================================
-SECTION 9 - DISKONTO, ENTERPRISE VALUE, DAN NILAI PER SAHAM
+SECTION 9 - DISCOUNTING, ENTERPRISE VALUE, AND PER-SHARE VALUE
 =============================================================================
-TUJUAN  : Mendiskontokan seluruh arus kas ke nilai sekarang, lalu menjembatani
-          dari nilai perusahaan (Enterprise Value) ke nilai yang menjadi hak
-          pemegang saham biasa (Equity Value), dan membaginya per lembar.
+PURPOSE : Discount every cash flow to present value, then bridge from firm
+          value (Enterprise Value) to the value belonging to common
+          shareholders (Equity Value), and divide it per share.
 
-RUMUS   :
-  9.1 DISKONTO ARUS KAS EKSPLISIT (konvensi tengah tahun)
+FORMULA :
+  9.1 DISCOUNTING EXPLICIT CASH FLOWS (mid-year convention)
       PV(FCFF_t) = FCFF_t / (1 + WACC)^(t - 0.5)
 
-      Konvensi tengah tahun dipakai karena arus kas terjadi merata sepanjang
-      tahun, bukan menumpuk di 31 Desember. Kalau memakai konvensi akhir
-      tahun, ganti eksponen menjadi t.
+      The mid-year convention is used because cash flow occurs evenly
+      through the year, not piled up on December 31. For the end-of-year
+      convention, change the exponent to t.
 
-  9.2 DISKONTO TERMINAL VALUE
+  9.2 DISCOUNTING TERMINAL VALUE
       PV(TV) = TV_N / (1 + WACC)^N
 
-      Terminal value didiskontokan pada akhir tahun N (bukan tengah tahun)
-      karena TV merepresentasikan nilai per akhir periode proyeksi.
+      Terminal value is discounted at the end of year N (not mid-year)
+      because TV represents value as of the end of the projection period.
 
   9.3 ENTERPRISE VALUE
       EV = Sigma PV(FCFF_t) + PV(TV)
 
-  9.4 BRIDGE KE EQUITY VALUE
+  9.4 BRIDGE TO EQUITY VALUE
       Equity Value = EV
-                   + Kas dan setara kas
-                   - Total utang berbunga
-                   - Kepentingan non-pengendali
+                   + Cash and equivalents
+                   - Total interest-bearing debt
+                   - Non-controlling interest
 
-      Catatan: aset non-operasional (investasi pada entitas asosiasi,
-      properti investasi) TIDAK ditambahkan pada fase ini. Ini membuat hasil
-      cenderung konservatif untuk emiten holding. Ditandai sebagai
-      keterbatasan, akan ditangani di fase kedua.
+      Note: non-operating assets (investments in associates, investment
+      property) are NOT added at this stage. This makes the result
+      conservative for holding-company issuers. Flagged as a limitation,
+      to be addressed in a second phase.
 
-  9.5 NILAI PER SAHAM
+  9.5 PER-SHARE VALUE
       Fair Value per Share = Equity Value / Shares Outstanding
 
-      Memakai shares outstanding dasar, bukan fully diluted, karena data
-      opsi karyawan tidak tersedia di yfinance. Untuk emiten dengan program
-      opsi besar, hasilnya akan overstate.
+      Uses basic shares outstanding, not fully diluted, because employee
+      option data isn't available in yfinance. For issuers with a large
+      option program, the result will be overstated.
 
   9.6 UPSIDE
-      Upside = (Fair Value / Harga Pasar) - 1
+      Upside = (Fair Value / Market Price) - 1
 
-OUTPUT  : dict lengkap berisi seluruh komponen bridge.
+OUTPUT  : a complete dict with every bridge component.
 =============================================================================
 """
 
@@ -58,7 +58,7 @@ from s08_terminal import check_tv_dependency
 def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
                        mid_year=None):
     """
-    Diskontokan proyeksi dan bangun bridge EV ke equity value.
+    Discount the projection and build the EV-to-equity-value bridge.
     """
     A = ASSUMPTIONS
     mid = A["mid_year_convention"] if mid_year is None else mid_year
@@ -67,7 +67,7 @@ def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
     if not tv_info["valid"]:
         return {"valid": False, "reason": tv_info["reason"]}
 
-    # ---------------- 9.1 diskonto arus kas eksplisit ----------------
+    # ---------------- 9.1 discount the explicit cash flows ----------------
     disc_rows = []
     pv_explicit = 0.0
     for t in range(1, N + 1):
@@ -77,12 +77,12 @@ def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
         pv = fcff * df
         pv_explicit += pv
         disc_rows.append({
-            "Tahun": t, "FCFF": fcff, "Eksponen": exponent,
+            "Year": t, "FCFF": fcff, "Exponent": exponent,
             "Discount factor": df, "PV FCFF": pv
         })
-    disc = pd.DataFrame(disc_rows).set_index("Tahun")
+    disc = pd.DataFrame(disc_rows).set_index("Year")
 
-    # ---------------- 9.2 diskonto terminal value ----------------
+    # ---------------- 9.2 discount the terminal value ----------------
     df_tv = 1.0 / ((1 + wacc) ** N)
     pv_tv = tv_info["tv_nominal"] * df_tv
 
@@ -99,13 +99,13 @@ def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
 
     if equity_value <= 0:
         flags.warn("Equity Value",
-                   "Nilai ekuitas hasil model negatif atau nol. Utang bersih "
-                   "melebihi nilai operasional perusahaan menurut asumsi ini.")
+                   "The model's equity value is negative or zero. Net debt "
+                   "exceeds the company's operating value under these assumptions.")
 
-    # ---------------- 9.5 per saham ----------------
+    # ---------------- 9.5 per-share value ----------------
     shares = data.shares_outstanding
     if not np.isfinite(shares) or shares <= 0:
-        flags.missing("Shares outstanding", "Fair value per saham tidak dapat dihitung.")
+        flags.missing("Shares outstanding", "Fair value per share cannot be computed.")
         fv_share = np.nan
     else:
         fv_share = equity_value / shares
@@ -114,7 +114,7 @@ def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
     price = data.price
     upside = (fv_share / price - 1) if (np.isfinite(fv_share) and np.isfinite(price) and price > 0) else np.nan
 
-    # ---------------- metrik implied ----------------
+    # ---------------- implied metrics ----------------
     ebitda_final = float(proj["EBIT"].iloc[-1] + proj["D&A"].iloc[-1])
     implied_ev_ebitda_now = ev / snapshot["ebitda"] if (np.isfinite(snapshot["ebitda"]) and snapshot["ebitda"] > 0) else np.nan
 
@@ -143,16 +143,16 @@ def discount_and_value(proj, tv_info, wacc, snapshot, data, flags,
 
 
 def bridge_table(v):
-    """Tabel jembatan dari EV ke nilai per saham."""
+    """Bridge table from enterprise value to per-share value."""
     rows = [
-        ("PV arus kas eksplisit", v["pv_explicit"] / 1e9),
-        ("PV terminal value", v["pv_terminal"] / 1e9),
+        ("PV of explicit cash flows", v["pv_explicit"] / 1e9),
+        ("PV of terminal value", v["pv_terminal"] / 1e9),
         ("Enterprise Value", v["enterprise_value"] / 1e9),
-        ("(+) Kas dan setara kas", v["cash"] / 1e9),
-        ("(-) Total utang berbunga", -v["total_debt"] / 1e9),
-        ("(-) Kepentingan non-pengendali", -v["minority"] / 1e9),
+        ("(+) Cash and equivalents", v["cash"] / 1e9),
+        ("(-) Total interest-bearing debt", -v["total_debt"] / 1e9),
+        ("(-) Minority interest", -v["minority"] / 1e9),
         ("Equity Value", v["equity_value"] / 1e9),
     ]
-    df = pd.DataFrame(rows, columns=["Komponen", "IDR bn"])
+    df = pd.DataFrame(rows, columns=["Component", "IDR bn"])
     df["IDR bn"] = df["IDR bn"].round(0)
     return df

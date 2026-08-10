@@ -6,8 +6,8 @@ PURPOSE : Single source of truth for colours, typography, and CSS. Every
           visual decision in the app derives from the tokens defined here,
           so the palette can be changed in one place.
 
-TOKENS  : Navy and ice blue base, Poppins typeface, pill section labels,
-          consultant-report layout discipline.
+TOKENS  : Navy and ice blue base with an amber accent, Poppins typeface,
+          pill section labels, rounded consultant-report layout discipline.
 
 OUTPUT  : COLORS dict, PLOTLY_LAYOUT dict, and inject_css().
 =============================================================================
@@ -34,6 +34,7 @@ COLORS = {
     "hold":        "#B08D57",
     "warn":        "#D98B2B",
     "miss":        "#8A94A6",
+    "amber":       "#FF8A3D",   # accent on dark ground (sidebar sliders, focus)
 }
 
 RATING_COLOR = {
@@ -41,6 +42,7 @@ RATING_COLOR = {
     "SELL": COLORS["sell"],
     "HOLD": COLORS["hold"],
     "N/A": COLORS["ink_muted"],
+    "NONE": COLORS["ink_muted"],
 }
 
 FLAG_COLOR = {
@@ -80,6 +82,7 @@ def inject_css():
   --navy:{COLORS['navy']}; --navy-mid:{COLORS['navy_mid']}; --navy-soft:{COLORS['navy_soft']};
   --ice:{COLORS['ice']}; --ice-pale:{COLORS['ice_pale']}; --ice-faint:{COLORS['ice_faint']};
   --ink:{COLORS['ink']}; --ink-muted:{COLORS['ink_muted']}; --rule:{COLORS['rule']};
+  --amber:{COLORS['amber']};
 }}
 
 html, body, [class*="css"], .stApp, button, input, textarea, select {{
@@ -92,6 +95,16 @@ html, body, [class*="css"], .stApp, button, input, textarea, select {{
 /* ---------- SIDEBAR ---------- */
 section[data-testid="stSidebar"] {{ background:var(--navy); }}
 section[data-testid="stSidebar"] * {{ color:{COLORS['white']} !important; }}
+
+/* Keep the assumptions panel pinned on desktop so it never scrolls out of
+   view while the report below it is long. Collapses back to normal flow on
+   narrow / mobile widths, where the sidebar becomes an overlay drawer. */
+@media (min-width: 992px) {{
+  section[data-testid="stSidebar"] {{
+    position: sticky !important; top: 0 !important; height: 100vh !important; overflow-y: auto !important;
+  }}
+}}
+
 section[data-testid="stSidebar"] .stSlider label,
 section[data-testid="stSidebar"] .stTextInput label {{
   font-size:.72rem !important; font-weight:600 !important;
@@ -100,14 +113,42 @@ section[data-testid="stSidebar"] .stTextInput label {{
 section[data-testid="stSidebar"] input {{
   background:var(--navy-mid) !important; border:1px solid var(--navy-soft) !important;
   color:{COLORS['white']} !important; font-weight:600 !important; letter-spacing:.06em;
+  text-transform:uppercase; border-radius:8px !important;
 }}
-section[data-testid="stSidebar"] .stButton button {{
-  background:var(--ice); color:var(--navy) !important; border:0; width:100%;
-  font-weight:600; letter-spacing:.08em; text-transform:uppercase;
-  font-size:.78rem; padding:.62rem 0; border-radius:2px;
+
+/* Run analysis button: width="stretch" makes Streamlit size the container to
+   100% natively; this just carries the visual style (colour, weight, radius). */
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {{
+  background:var(--amber) !important; color:var(--navy) !important; border:0 !important;
+  font-weight:700; letter-spacing:.08em; text-transform:uppercase;
+  font-size:.8rem; padding:.7rem 0; border-radius:8px !important;
+  justify-content:center;
+  transition:background .15s ease, transform .1s ease;
 }}
-section[data-testid="stSidebar"] .stButton button:hover {{ background:{COLORS['white']}; }}
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p {{ text-align:center; width:100%; }}
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:hover {{ background:{COLORS['white']} !important; }}
+section[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:active {{ transform:scale(.99); }}
 section[data-testid="stSidebar"] hr {{ border-color:var(--navy-soft); margin:1.1rem 0; }}
+
+/* Slider thumb + active track: amber for contrast against the navy sidebar */
+section[data-testid="stSidebar"] [data-testid="stSlider"] [role="slider"] {{
+  background-color:var(--amber) !important; border-color:var(--amber) !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stSlider"] [role="group"] > div > div:not([data-testid="stSliderTickBar"]) {{
+  background-color:var(--amber) !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stSliderThumbValue"] {{
+  color:var(--amber) !important; font-weight:700 !important;
+}}
+/* Min/max tick row: keep it plain text on the navy ground, no highlight
+   box behind the numbers even while the slider is focused or dragged. */
+section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] {{
+  background:transparent !important; background-color:transparent !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
+  background:transparent !important; background-color:transparent !important;
+  color:var(--ice) !important;
+}}
 
 /* ---------- TYPOGRAPHY ---------- */
 .eyebrow {{
@@ -128,28 +169,30 @@ section[data-testid="stSidebar"] hr {{ border-color:var(--navy-soft); margin:1.1
   background:var(--navy); color:{COLORS['white']};
   padding:.34rem .95rem; border-radius:100px;
   font-size:.74rem; font-weight:600; letter-spacing:.1em; text-transform:uppercase;
-  margin:1.9rem 0 .3rem 0;
+  margin:2.1rem 0 .5rem 0;
 }}
 .pill .num {{
   background:var(--ice); color:var(--navy); border-radius:100px;
   padding:.02rem .46rem; font-size:.66rem; font-weight:700; letter-spacing:.04em;
 }}
-.pill-note {{ font-size:.8rem; color:var(--ink-muted); margin:0 0 .7rem 0; }}
+.pill-note {{ font-size:.8rem; color:var(--ink-muted); margin:0 0 1.05rem 0; }}
 
 /* ---------- METRIC STRIP ---------- */
-.mstrip {{ display:flex; flex-wrap:wrap; gap:0; border:1px solid var(--rule); border-radius:3px; overflow:hidden; }}
+.mstrip {{ display:flex; flex-wrap:wrap; gap:0; border:1px solid var(--rule); border-radius:12px; overflow:hidden; }}
 .mcell {{ flex:1 1 0; min-width:132px; padding:.72rem .9rem; border-right:1px solid var(--rule); background:var(--ice-faint); }}
 .mcell:last-child {{ border-right:0; }}
 .mcell .k {{ font-size:.64rem; font-weight:600; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted); }}
 .mcell .v {{ font-size:1.02rem; font-weight:600; color:var(--navy); margin-top:.18rem; }}
 
-/* ---------- VERDICT BAND (signature element) ---------- */
-.verdict {{ background:var(--navy); border-radius:4px; padding:1.35rem 1.6rem; margin:.4rem 0 .3rem 0; }}
+/* ---------- VERDICT BAND (signature element, always the first highlight) ---------- */
+.verdict {{ background:var(--navy); border-radius:16px; padding:1.5rem 1.7rem; margin:.4rem 0 1.6rem 0;
+           box-shadow:0 8px 24px -12px rgba(11,31,58,.45); }}
 .verdict .row {{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:2.4rem; }}
 .verdict .rating {{ font-size:2.5rem; font-weight:700; line-height:1; letter-spacing:-.02em; }}
 .verdict .lab {{ font-size:.64rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--ice); margin-bottom:.3rem; }}
 .verdict .big {{ font-size:1.5rem; font-weight:600; color:{COLORS['white']}; line-height:1; }}
 .verdict .small {{ font-size:.78rem; color:var(--ice); margin-top:.35rem; }}
+.verdict .reason {{ font-size:.92rem; color:{COLORS['white']}; line-height:1.55; max-width:640px; }}
 
 /* Scale showing where market price sits inside the bear-bull range */
 .scale {{ margin-top:1.25rem; }}
@@ -159,7 +202,7 @@ section[data-testid="stSidebar"] hr {{ border-color:var(--navy-soft); margin:1.1
 .scale .ends {{ display:flex; justify-content:space-between; font-size:.66rem; color:var(--ice); margin-top:.42rem; letter-spacing:.05em; }}
 
 /* ---------- FLAG PANEL ---------- */
-.flagbox {{ border:1px solid var(--rule); border-left:3px solid {COLORS['warn']}; border-radius:3px; background:var(--ice-faint); padding:.85rem 1rem; }}
+.flagbox {{ border:1px solid var(--rule); border-left:4px solid {COLORS['warn']}; border-radius:12px; background:var(--ice-faint); padding:.9rem 1.1rem; }}
 .flagrow {{ display:flex; gap:.7rem; padding:.32rem 0; border-bottom:1px solid var(--rule); font-size:.82rem; }}
 .flagrow:last-child {{ border-bottom:0; }}
 .flagtag {{ flex:0 0 66px; font-size:.6rem; font-weight:700; letter-spacing:.08em; text-align:center; padding:.16rem 0; border-radius:100px; height:fit-content; color:{COLORS['white']}; }}
@@ -167,24 +210,41 @@ section[data-testid="stSidebar"] hr {{ border-color:var(--navy-soft); margin:1.1
 .flagnote {{ flex:1 1 auto; color:var(--ink-muted); }}
 
 /* ---------- CALLOUTS ---------- */
-.callout {{ border-left:3px solid var(--ice); background:var(--ice-pale); padding:.72rem 1rem; border-radius:0 3px 3px 0; font-size:.84rem; margin:.5rem 0; }}
+.callout {{ border-left:3px solid var(--ice); background:var(--ice-pale); padding:.75rem 1.05rem; border-radius:0 12px 12px 0; font-size:.84rem; margin:.5rem 0; }}
 .callout b {{ color:var(--navy); }}
 .gate-ok {{ color:{COLORS['buy']}; font-weight:600; }}
 .gate-no {{ color:{COLORS['sell']}; font-weight:600; }}
 
-/* ---------- TABLES ---------- */
-[data-testid="stDataFrame"] {{ border:1px solid var(--rule); border-radius:3px; }}
+/* ---------- STYLED TABLES (custom HTML, replaces the native grid) ---------- */
+.rtable-wrap {{ border:1px solid var(--rule); border-radius:14px; overflow:hidden; margin:.3rem 0 .6rem 0; }}
+.rtable {{ width:100%; border-collapse:collapse; font-size:.84rem; }}
+.rtable thead th {{
+  background:var(--navy); color:{COLORS['white']}; text-align:left;
+  padding:.62rem .9rem; font-size:.66rem; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; white-space:nowrap;
+}}
+.rtable thead th.num {{ text-align:right; }}
+.rtable tbody td {{ padding:.52rem .9rem; border-top:1px solid var(--rule); color:var(--ink); white-space:nowrap; }}
+.rtable tbody td.num {{ text-align:right; font-variant-numeric:tabular-nums; }}
+.rtable tbody tr:nth-child(even) td {{ background:var(--ice-faint); }}
+.rtable tbody tr:hover td {{ background:var(--ice-pale); }}
+.rtable .status-pass {{ color:{COLORS['buy']}; font-weight:700; }}
+.rtable .status-fail {{ color:{COLORS['sell']}; font-weight:700; }}
+.rtable-scroll {{ overflow-x:auto; }}
 
 /* ---------- LIMITATIONS + DISCLAIMER ---------- */
-.limits {{ border:1px solid var(--rule); border-radius:3px; padding:1rem 1.2rem; background:var(--ice-faint); font-size:.83rem; }}
+.limits {{ border:1px solid var(--rule); border-radius:14px; padding:1.05rem 1.3rem; background:var(--ice-faint); font-size:.83rem; }}
 .limits li {{ margin-bottom:.3rem; color:var(--ink-muted); }}
-.disclaimer {{ background:var(--navy); color:var(--ice); border-radius:4px; padding:1.15rem 1.4rem; margin-top:2.4rem; font-size:.78rem; line-height:1.6; }}
+.disclaimer {{ background:var(--navy); color:var(--ice); border-radius:16px; padding:1.15rem 1.4rem; margin-top:2.4rem; font-size:.78rem; line-height:1.6; }}
 .disclaimer .sig {{ color:{COLORS['white']}; font-weight:600; letter-spacing:.1em; text-transform:uppercase; font-size:.74rem; margin-bottom:.5rem; }}
 
 /* ---------- EMPTY STATE ---------- */
-.empty {{ border:1px dashed var(--rule); border-radius:4px; padding:3.2rem 2rem; text-align:center; background:var(--ice-faint); }}
+.empty {{ border:1px dashed var(--rule); border-radius:16px; padding:3.2rem 2rem; text-align:center; background:var(--ice-faint); }}
 .empty h3 {{ color:var(--navy); font-weight:600; font-size:1.1rem; margin:0 0 .4rem 0; }}
 .empty p {{ color:var(--ink-muted); font-size:.87rem; margin:0; }}
+
+/* ---------- CHARTS + MISC ROUNDING ---------- */
+[data-testid="stPlotlyChart"] {{ border:1px solid var(--rule); border-radius:14px; overflow:hidden; padding:.4rem; }}
 
 @media (prefers-reduced-motion: reduce) {{ * {{ animation:none !important; transition:none !important; }} }}
 </style>
@@ -213,3 +273,54 @@ def metric_strip(pairs):
 
 def callout(html):
     st.markdown(f'<div class="callout">{html}</div>', unsafe_allow_html=True)
+
+
+def styled_table(df, hide_index=True, status_col=None, right_align_numeric=True):
+    """
+    Render a DataFrame as a hand-styled HTML table: rounded container, navy
+    uppercase header, zebra striping, and optional colour-coded status text.
+    Used instead of st.dataframe so every report table shares one look.
+    """
+    cols = list(df.columns)
+    idx_name = df.index.name or ""
+
+    def is_numeric(col):
+        try:
+            pd_series = df[col]
+            return right_align_numeric and pd_series.astype(str).str.match(
+                r"^-?[\d.,]+%?x?$").fillna(False).all()
+        except Exception:
+            return False
+
+    numeric_flags = {c: is_numeric(c) for c in cols}
+
+    head_cells = ""
+    if not hide_index:
+        head_cells += f'<th>{idx_name}</th>'
+    for c in cols:
+        cls = ' class="num"' if numeric_flags[c] else ""
+        head_cells += f"<th{cls}>{c}</th>"
+
+    body_rows = []
+    for i, row in df.iterrows():
+        cells = ""
+        if not hide_index:
+            cells += f"<td>{i}</td>"
+        for c in cols:
+            val = row[c]
+            cls = ' class="num"' if numeric_flags[c] else ""
+            if status_col is not None and c == status_col:
+                s = str(val).strip().lower()
+                badge_cls = "status-pass" if s in ("passed", "pass") else "status-fail"
+                cells += f'<td{cls}><span class="{badge_cls}">{val}</span></td>'
+            else:
+                cells += f"<td{cls}>{val}</td>"
+        body_rows.append(f"<tr>{cells}</tr>")
+
+    html = (
+        '<div class="rtable-wrap"><div class="rtable-scroll"><table class="rtable">'
+        f"<thead><tr>{head_cells}</tr></thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        "</table></div></div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
