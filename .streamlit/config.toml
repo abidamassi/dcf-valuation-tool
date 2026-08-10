@@ -1,0 +1,14 @@
+# Streamlit base theme. Fine detail is handled by the CSS in theme.py.
+[theme]
+base = "light"
+primaryColor = "#0B1F3A"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F4F8FC"
+textColor = "#1A2733"
+font = "sans serif"
+
+[server]
+headless = true
+
+[browser]
+gatherUsageStats = false
