@@ -195,12 +195,19 @@ section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
 /* ---------- VERDICT BAND (signature element, always the first highlight) ---------- */
 .verdict {{ background:var(--navy); border-radius:16px; padding:1.5rem 1.7rem; margin:.4rem 0 1.6rem 0;
            box-shadow:0 8px 24px -12px rgba(11,31,58,.45); }}
-.verdict .row {{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:2.4rem; }}
+/* Each stat gets an equal flex-basis so the row fills the card edge to
+   edge instead of every item shrinking to its own text width and
+   bunching to the left with a single large gap trailing behind them.
+   flex-wrap then folds the row onto as many lines as the width needs,
+   so mobile gets one stat per line for free without a media query. */
+.verdict .row {{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:1.5rem 2.2rem; }}
+.verdict .vcell {{ flex:1 1 190px; min-width:150px; }}
+.verdict .vcell-wide {{ flex:2 1 320px; }}
 .verdict .rating {{ font-size:2.5rem; font-weight:700; line-height:1; letter-spacing:-.02em; }}
 .verdict .lab {{ font-size:.64rem; font-weight:600; letter-spacing:.14em; text-transform:uppercase; color:var(--ice); margin-bottom:.3rem; }}
 .verdict .big {{ font-size:1.5rem; font-weight:600; color:{COLORS['white']}; line-height:1; }}
 .verdict .small {{ font-size:.78rem; color:var(--ice); margin-top:.35rem; }}
-.verdict .reason {{ font-size:.92rem; color:{COLORS['white']}; line-height:1.55; max-width:640px; }}
+.verdict .reason {{ font-size:.92rem; color:{COLORS['white']}; line-height:1.55; }}
 
 /* Scale showing where market price sits inside the bear-bull range */
 .scale {{ margin-top:1.25rem; }}
@@ -209,13 +216,16 @@ section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
 .scale .mark {{ position:absolute; top:-6px; width:2px; height:18px; background:{COLORS['white']}; }}
 .scale .ends {{ display:flex; justify-content:space-between; font-size:.66rem; color:var(--ice); margin-top:.42rem; letter-spacing:.05em; }}
 
-/* ---------- FLAG PANEL ---------- */
-.flagbox {{ border:1px solid var(--rule); border-left:4px solid {COLORS['warn']}; border-radius:12px; background:var(--ice-faint); padding:.9rem 1.1rem; }}
-.flagrow {{ display:flex; gap:.7rem; padding:.32rem 0; border-bottom:1px solid var(--rule); font-size:.82rem; }}
-.flagrow:last-child {{ border-bottom:0; }}
-.flagtag {{ flex:0 0 66px; font-size:.6rem; font-weight:700; letter-spacing:.08em; text-align:center; padding:.16rem 0; border-radius:100px; height:fit-content; color:{COLORS['white']}; }}
-.flagfield {{ flex:0 0 168px; font-weight:600; color:var(--navy); }}
-.flagnote {{ flex:1 1 auto; color:var(--ink-muted); }}
+/* ---------- FLAG TABLE (data quality) ----------
+   Same three fields as before (level, field, note) but laid out as a
+   table sharing the .rtable look. On mobile the note column keeps a
+   readable min-width rather than being squeezed into a sliver, and the
+   wrapper scrolls horizontally instead of forcing the layout to fit. */
+.flag-wrap {{ border-left:4px solid {COLORS['warn']}; }}
+.flag-rtable td.flag-field {{ font-weight:600; color:var(--navy); white-space:nowrap; }}
+.flag-rtable td.flag-note {{ white-space:normal; min-width:260px; max-width:460px; color:var(--ink-muted); }}
+.flag-rtable .flag-badge {{ display:inline-block; min-width:64px; text-align:center; font-size:.6rem; font-weight:700; letter-spacing:.08em; padding:.18rem .5rem; border-radius:100px; color:{COLORS['white']}; }}
+.flag-rtable thead th:first-child {{ width:1%; }}
 
 /* ---------- CALLOUTS ---------- */
 .callout {{ border-left:3px solid var(--ice); background:var(--ice-pale); padding:.75rem 1.05rem; border-radius:0 12px 12px 0; font-size:.84rem; margin:.5rem 0; }}
@@ -254,6 +264,16 @@ section[data-testid="stSidebar"] [data-testid="stSliderTickBar"] * {{
 /* ---------- CHARTS + MISC ROUNDING ---------- */
 [data-testid="stPlotlyChart"] {{ border:1px solid var(--rule); border-radius:14px; overflow:hidden; padding:.4rem; }}
 
+/* Reinvestment rate / ROIC / implied growth bubbles: on desktop these three
+   st.columns sit side by side and already have breathing room from the
+   column gap. On mobile Streamlit stacks them full-width with almost no
+   vertical gap, so add one back here, matching the spacing used elsewhere
+   (e.g. terminal value share of EV -> shares outstanding) via st.write(""). */
+@media (max-width: 640px) {{
+  .st-key-proj-bubbles [data-testid="stColumn"] {{ margin-bottom:1.1rem; }}
+  .st-key-proj-bubbles [data-testid="stColumn"]:last-child {{ margin-bottom:0; }}
+}}
+
 @media (prefers-reduced-motion: reduce) {{ * {{ animation:none !important; transition:none !important; }} }}
 </style>
 """, unsafe_allow_html=True)
@@ -281,6 +301,28 @@ def metric_strip(pairs):
 
 def callout(html):
     st.markdown(f'<div class="callout">{html}</div>', unsafe_allow_html=True)
+
+
+def flag_table(flag_log):
+    """
+    Data-quality flags as a horizontally scrollable table, sharing the
+    .rtable look used everywhere else in the report. Replaces the old
+    fixed three-column flex row, which on mobile crushed the note column
+    against the right edge. Same three fields (level, field, note); the
+    note column keeps a readable width and the table scrolls left-right
+    instead.
+    """
+    rows = "".join(
+        f'<tr><td><span class="flag-badge" style="background:{FLAG_COLOR.get(lv, COLORS["miss"])}">{lv}</span></td>'
+        f'<td class="flag-field">{fd}</td>'
+        f'<td class="flag-note">{nt}</td></tr>'
+        for lv, fd, nt in flag_log.items)
+    html = (
+        '<div class="rtable-wrap flag-wrap"><div class="rtable-scroll"><table class="rtable flag-rtable">'
+        '<thead><tr><th>Level</th><th>Field</th><th>Note</th></tr></thead>'
+        f'<tbody>{rows}</tbody></table></div></div>'
+    )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def styled_table(df, hide_index=True, status_col=None, right_align_numeric=True):

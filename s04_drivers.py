@@ -187,6 +187,27 @@ def build_drivers(hist, flags):
                    "historical median with no fundamental cap applied.")
 
     # -------------------------------------------------------------------
+    # 4.7b GROWTH FLOOR (lower-bound safety net, not a new basis)
+    # -------------------------------------------------------------------
+    # Applied only AFTER g_base above is fully settled by the RR x ROIC cap,
+    # which does not change. Some issuers pass every screening gate with a
+    # negative median historical growth (a post-boom pullback, for example),
+    # and a negative g_base compounds year over year through the explicit
+    # forecast, occasionally driving fair value negative. If the final
+    # g_base is below the floor -- including negative -- the floor is used
+    # instead. If it already clears the floor, it is left untouched.
+    g_floor = A["rev_growth_min_floor"]
+    if g_base < g_floor:
+        flags.warn(
+            "Growth floor applied",
+            f"Growth after the reinvestment cap is {g_base*100:.2f}%, below the "
+            f"{g_floor*100:.1f}% floor. {g_floor*100:.1f}% is used instead so the "
+            f"forecast does not compound a declining or negative growth path. "
+            f"This is a lower bound only, not a recalculation of the rate."
+        )
+        g_base = g_floor
+
+    # -------------------------------------------------------------------
     # 4.8 MARGIN TARGET AND OPERATING LEVERAGE DETECTION
     # -------------------------------------------------------------------
     # EBIT margin is no longer constant across the projection. If there's

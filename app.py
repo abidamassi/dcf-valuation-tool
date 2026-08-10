@@ -24,8 +24,8 @@ import streamlit as st
 warnings.filterwarnings("ignore")
 
 from config import ASSUMPTIONS, SCREENING, DISCLAIMER
-from theme import (COLORS, RATING_COLOR, FLAG_COLOR,
-                   inject_css, pill, metric_strip, callout, styled_table)
+from theme import (COLORS, RATING_COLOR,
+                   inject_css, pill, metric_strip, callout, styled_table, flag_table)
 from charts import (chart_projection, chart_waterfall,
                     chart_sensitivity, chart_scenarios)
 from main import fetch_bundle, analyze_ticker
@@ -242,25 +242,31 @@ if scr["passed"] and r.get("ok"):
     pos = float(np.clip((px - lo) / span, 0, 1)) * 100
     fv_pos = float(np.clip((fv - lo) / span, 0, 1)) * 100
 
+    # Fair value below market price is downside, not upside. The sign of
+    # rec['upside'] already carries this, but the row label was hard-coded
+    # to "Upside" regardless, which read backwards whenever the stock
+    # screened as overvalued.
+    ud_label = "Upside" if rec["upside"] >= 0 else "Downside"
+
     st.markdown(f"""
 <div class="verdict">
   <div class="row">
-    <div>
+    <div class="vcell">
       <div class="lab">Recommendation</div>
       <div class="rating" style="color:{rcolor}">{rating}</div>
     </div>
-    <div>
+    <div class="vcell">
       <div class="lab">Fair value per share</div>
       <div class="big">{f_idr(fv)}</div>
       <div class="small">Base case</div>
     </div>
-    <div>
+    <div class="vcell">
       <div class="lab">Market price</div>
       <div class="big">{f_idr(px)}</div>
       <div class="small">{rec['label']}</div>
     </div>
-    <div>
-      <div class="lab">Upside</div>
+    <div class="vcell">
+      <div class="lab">{ud_label}</div>
       <div class="big" style="color:{rcolor}">{f_pct(rec['upside'], 1, sign=True)}</div>
       <div class="small">Buy above +{ASSUMPTIONS['buy_threshold']*100:.0f}%,
       sell below {ASSUMPTIONS['sell_threshold']*100:.0f}%</div>
@@ -283,11 +289,11 @@ else:
     st.markdown(f"""
 <div class="verdict">
   <div class="row">
-    <div>
+    <div class="vcell">
       <div class="lab">Recommendation</div>
       <div class="rating" style="color:{COLORS['ink_muted']}">None</div>
     </div>
-    <div style="flex:1 1 360px;">
+    <div class="vcell vcell-wide">
       <div class="lab">Reason</div>
       <div class="reason">{reason}</div>
     </div>
@@ -356,12 +362,7 @@ pill("03", "Data quality warnings",
      "was missing, derived, proxied, or clipped.")
 
 if d.flags.has_issue:
-    rows = "".join(
-        f'<div class="flagrow">'
-        f'<div class="flagtag" style="background:{FLAG_COLOR.get(lv, COLORS["miss"])}">{lv}</div>'
-        f'<div class="flagfield">{fd}</div><div class="flagnote">{nt}</div></div>'
-        for lv, fd, nt in d.flags.items)
-    st.markdown(f'<div class="flagbox">{rows}</div>', unsafe_allow_html=True)
+    flag_table(d.flags)
 else:
     callout("No data quality issues detected.")
 
@@ -433,13 +434,14 @@ show_chart(chart_projection(proj))
 styled_table(projection_table(proj), hide_index=False)
 
 gap = fsum["avg_implied_growth"] - fsum["g1"]
-c1, c2, c3 = st.columns(3)
-with c1:
-    metric_strip([("Avg reinvestment rate", f_pct(fsum["avg_reinvest_rate"], 1))])
-with c2:
-    metric_strip([("Avg ROIC", f_pct(fsum["avg_roic"], 1))])
-with c3:
-    metric_strip([("Implied growth", f_pct(fsum["avg_implied_growth"], 1))])
+with st.container(key="proj-bubbles"):
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_strip([("Avg reinvestment rate", f_pct(fsum["avg_reinvest_rate"], 1))])
+    with c2:
+        metric_strip([("Avg ROIC", f_pct(fsum["avg_roic"], 1))])
+    with c3:
+        metric_strip([("Implied growth", f_pct(fsum["avg_implied_growth"], 1))])
 
 if np.isfinite(gap) and abs(gap) > 0.05:
     callout(f"<b>Internal consistency check.</b> Implied growth from reinvestment "

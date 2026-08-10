@@ -46,18 +46,23 @@ def make_recommendation(valuation, flags=None):
     else:
         rating, label = "HOLD", "Fairly valued"
 
+    # "Upside" reads backwards once fair value falls below market price, so
+    # the word itself flips with the sign rather than staying fixed.
+    ud_word = "upside" if upside >= 0 else "downside"
+
     note = (
         f"Model fair value IDR {fv:,.0f} versus market price IDR {px:,.0f}, "
-        f"upside {upside*100:+.1f}%."
+        f"{ud_word} {upside*100:+.1f}%."
     )
 
     # Flag when the gap is extreme, usually a sign of a problematic assumption
     if abs(upside) > 1.0 and flags is not None:
         flags.warn("Recommendation",
-                   f"Upside of {upside*100:+.0f}% is too extreme. In practice a "
-                   f"gap this large more often signals a flawed assumption or "
-                   f"data issue than genuine market mispricing. Check WACC, "
-                   f"terminal growth, and EBIT margin before relying on it.")
+                   f"{ud_word.capitalize()} of {upside*100:+.0f}% is too extreme. In "
+                   f"practice a gap this large more often signals a flawed "
+                   f"assumption or data issue than genuine market mispricing. "
+                   f"Check WACC, terminal growth, and EBIT margin before relying "
+                   f"on it.")
 
     return {
         "rating": rating,

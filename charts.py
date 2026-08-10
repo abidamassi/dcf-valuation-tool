@@ -53,12 +53,21 @@ def chart_projection(proj):
                     marker=dict(size=7, color=COLORS["hold"]),
                     hovertemplate="Margin: %{y:.2f}%<extra></extra>")
 
-    layout = _base("Projected revenue, FCFF, and EBIT margin", 360)
+    layout = _base("Projected revenue, FCFF, and EBIT margin", 400)
     layout["barmode"] = "group"
     layout["yaxis"]["title"] = dict(text="IDR bn", font=dict(size=11))
     layout["yaxis2"] = dict(title=dict(text="EBIT margin %", font=dict(size=11)),
                             overlaying="y", side="right", showgrid=False,
                             tickfont=dict(size=11), linecolor=COLORS["rule"])
+    # The shared default legend sits above the plot, flush right. That works
+    # at full desktop width, but as the chart narrows on mobile the three
+    # entries wrap onto a second line and collide with the title above them.
+    # Anchoring it below the plot instead keeps it clear of the title at
+    # every width, so only the bottom margin needs to grow to make room.
+    layout["legend"] = dict(orientation="h", yanchor="top", y=-0.22,
+                            xanchor="center", x=0.5, font=dict(size=11),
+                            bgcolor="rgba(0,0,0,0)")
+    layout["margin"] = dict(l=10, r=10, t=48, b=70)
     fig.update_layout(**layout)
     return fig
 
