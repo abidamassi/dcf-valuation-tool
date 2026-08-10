@@ -114,7 +114,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    ticker_in = st.text_input("Ticker", value="SIDO", max_chars=12,
+    ticker_in = st.text_input("Ticker", value="SIDO", max_chars=4,
                               help="Enter the IDX code only. The .JK suffix is added "
                                    "automatically, so SIDO becomes SIDO.JK.")
 
